@@ -23,44 +23,61 @@ interface Position {
 
 const ITEMS_PER_PAGE = 5
 
-export default function PositionTable() {
-  const [positions, setPositions] = useState<Position[]>(() => {
-    const saved = localStorage.getItem("positions")
-    return saved
-      ? JSON.parse(saved)
-      : [
-        { id: 1, name: "Programmer", department: "ฝ่าย IT", desc: "พัฒนาและดูแลระบบ" },
-        { id: 2, name: "บัญชี", department: "ฝ่ายการเงิน", desc: "จัดทำรายงานทางบัญชี" },
-      ]
-  })
+// Default positions สำหรับ SSR
+const defaultPositions: Position[] = [
+  { id: 1, name: "Programmer", department: "ฝ่าย IT", desc: "พัฒนาและดูแลระบบ" },
+  { id: 2, name: "บัญชี", department: "ฝ่ายการเงิน", desc: "จัดทำรายงานทางบัญชี" },
+  { id: 3, name: "HR", department: "ฝ่ายบุคคล", desc: "ดูแลพนักงาน" },
+  { id: 4, name: "Designer", department: "ฝ่ายออกแบบ", desc: "ออกแบบ UI/UX" },
+  { id: 5, name: "Support", department: "ฝ่ายบริการลูกค้า", desc: "ตอบคำถามลูกค้า" },
+  { id: 6, name: "Marketing", department: "ฝ่ายการตลาด", desc: "โปรโมทสินค้า" },
+]
 
+export default function PositionTable() {
+  const [positions, setPositions] = useState<Position[]>(defaultPositions)
+  const [isLoaded, setIsLoaded] = useState(false)
+
+  // client-side: โหลดจาก localStorage
   useEffect(() => {
-    localStorage.setItem("positions", JSON.stringify(positions))
-  }, [positions])
+    const saved = localStorage.getItem("positions")
+    if (saved) {
+      setPositions(JSON.parse(saved))
+    }
+    setIsLoaded(true)
+  }, [])
+
+  // client-side: save to localStorage
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem("positions", JSON.stringify(positions))
+    }
+  }, [positions, isLoaded])
 
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [editingPosition, setEditingPosition] = useState<Position | null>(null)
-
   const [newPosition, setNewPosition] = useState({ name: "", department: "", desc: "" })
   const [editForm, setEditForm] = useState({ name: "", department: "", desc: "" })
 
+  // filter positions ตาม searchTerm
   const filtered = useMemo(() => {
+    if (!searchTerm) return positions
     return positions.filter(p =>
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.desc.toLowerCase().includes(searchTerm.toLowerCase())
     )
   }, [positions, searchTerm])
 
+  // pagination
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE
     return filtered.slice(start, start + ITEMS_PER_PAGE)
   }, [filtered, currentPage])
 
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
-
+  // handlers
   const handleAdd = () => {
     if (!newPosition.name || !newPosition.department) return
     const newId = Math.max(...positions.map(p => p.id), 0) + 1
@@ -139,16 +156,18 @@ export default function PositionTable() {
                   <td className="p-3">{p.department}</td>
                   <td className="p-3 text-muted-foreground">{p.desc}</td>
                   <td className="p-3 text-center">
-                    <Button className="cursor-pointer"
+                    <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleEditStart(p)}>
+                      onClick={() => handleEditStart(p)}
+                    >
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <Button className="cursor-pointer"
+                    <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(p.id)}>
+                      onClick={() => handleDelete(p.id)}
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </td>
@@ -163,17 +182,27 @@ export default function PositionTable() {
         <div className="flex justify-between items-center">
           <p className="text-sm text-muted-foreground">หน้า {currentPage} จาก {totalPages}</p>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
               ก่อนหน้า
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
               ถัดไป
             </Button>
           </div>
         </div>
       )}
 
-      {/* Dialog: เพิ่ม */}
+      {/* Dialog เพิ่ม */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent>
           <DialogHeader>
@@ -183,25 +212,37 @@ export default function PositionTable() {
           <div className="space-y-4">
             <div>
               <Label>ชื่อตำแหน่ง</Label>
-              <Input value={newPosition.name} onChange={e => setNewPosition({ ...newPosition, name: e.target.value })} placeholder="เช่น Programmer" />
+              <Input
+                value={newPosition.name}
+                onChange={e => setNewPosition({ ...newPosition, name: e.target.value })}
+                placeholder="เช่น Programmer"
+              />
             </div>
             <div>
               <Label>ฝ่าย/หน่วยงาน</Label>
-              <Input value={newPosition.department} onChange={e => setNewPosition({ ...newPosition, department: e.target.value })} placeholder="เช่น ฝ่าย IT" />
+              <Input
+                value={newPosition.department}
+                onChange={e => setNewPosition({ ...newPosition, department: e.target.value })}
+                placeholder="เช่น ฝ่าย IT"
+              />
             </div>
             <div>
               <Label>รายละเอียด</Label>
-              <Input value={newPosition.desc} onChange={e => setNewPosition({ ...newPosition, desc: e.target.value })} placeholder="เช่น พัฒนาระบบ..." />
+              <Input
+                value={newPosition.desc}
+                onChange={e => setNewPosition({ ...newPosition, desc: e.target.value })}
+                placeholder="เช่น พัฒนาระบบ..."
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button className="cursor-pointer" variant="outline" onClick={() => setIsAddOpen(false)}>ยกเลิก</Button>
-            <Button className="cursor-pointer" onClick={handleAdd}>เพิ่ม</Button>
+            <Button variant="outline" onClick={() => setIsAddOpen(false)}>ยกเลิก</Button>
+            <Button onClick={handleAdd}>เพิ่ม</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: แก้ไข */}
+      {/* Dialog แก้ไข */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent>
           <DialogHeader>
@@ -210,20 +251,29 @@ export default function PositionTable() {
           <div className="space-y-4">
             <div>
               <Label>ชื่อตำแหน่ง</Label>
-              <Input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+              <Input
+                value={editForm.name}
+                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+              />
             </div>
             <div>
               <Label>ฝ่าย/หน่วยงาน</Label>
-              <Input value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} />
+              <Input
+                value={editForm.department}
+                onChange={e => setEditForm({ ...editForm, department: e.target.value })}
+              />
             </div>
             <div>
               <Label>รายละเอียด</Label>
-              <Input value={editForm.desc} onChange={e => setEditForm({ ...editForm, desc: e.target.value })} />
+              <Input
+                value={editForm.desc}
+                onChange={e => setEditForm({ ...editForm, desc: e.target.value })}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button className="cursor-pointer" variant="outline" onClick={() => setIsEditOpen(false)}>ยกเลิก</Button>
-            <Button className="cursor-pointer" onClick={handleEditSave}>บันทึก</Button>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)}>ยกเลิก</Button>
+            <Button onClick={handleEditSave}>บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
