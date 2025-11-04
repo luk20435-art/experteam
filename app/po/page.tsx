@@ -1,0 +1,344 @@
+"use client"
+
+import { useState, useEffect, useMemo } from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { useData } from "@/src/contexts/data-context"
+import { formatCurrency } from "@/src/lib/utils"
+import { Plus, Search, Eye, Edit, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { format, startOfDay, endOfDay } from "date-fns"
+
+export default function POListPage() {
+  const { pos, moveToTrashPO, suppliers } = useData() // เปลี่ยนจาก deletePO → moveToTrashPO
+
+  const [searchTerm, setSearchTerm] = useState("")
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // ตัวกรองวันที่ + เรียงลำดับ
+  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined })
+  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest")
+
+  // กรองเฉพาะ PO ที่ยังไม่ถูกลบ
+  const activePOs = pos.filter(po => !po.deleted)
+
+  // กรอง + เรียงลำดับ
+  const filteredAndSortedPOs = useMemo(() => {
+    return activePOs
+      .filter((po) => {
+        const supplier = suppliers.find((s) => s.id === po.supplierId)
+
+        const searchLower = searchTerm.toLowerCase()
+
+        const matchesSearch =
+          String(po.poNumber).toLowerCase().includes(searchLower) ||
+          (supplier?.name || "").toLowerCase().includes(searchLower) ||
+          (po.description || "").toLowerCase().includes(searchLower)
+
+        if (dateRange.from && dateRange.to) {
+          const poDate = new Date(po.createdAt)
+          const from = startOfDay(dateRange.from)
+          const to = endOfDay(dateRange.to)
+          return matchesSearch && poDate >= from && poDate <= to
+        }
+
+        return matchesSearch
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime()
+        const dateB = new Date(b.createdAt).getTime()
+        return sortOrder === "latest" ? dateB - dateA : dateA - dateB
+      })
+  }, [activePOs, suppliers, searchTerm, dateRange.from, dateRange.to, sortOrder])
+
+  // Pagination
+  const totalItems = filteredAndSortedPOs.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const startIndex = (currentPage - 1) * pageSize
+  const endIndex = Math.min(startIndex + pageSize, totalItems)
+  const paginatedPOs = filteredAndSortedPOs.slice(startIndex, endIndex)
+
+  // รีเซ็ตหน้า
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, dateRange, sortOrder, pageSize])
+
+  // แก้ handleDelete ให้ใช้ moveToTrashPO
+  const handleDelete = (id: string, poNumber: string) => {
+    if (confirm(`คุณต้องการลบ PO "${poNumber}" หรือไม่?\n\nข้อมูลจะถูกย้ายไป "ถังขยะ" และสามารถกู้คืนได้`)) {
+      moveToTrashPO(id)
+    }
+  }
+
+  const exportToCSV = () => {
+    const headers = ["PO Number", "PR Number", "Supplier", "Description", "Total Amount", "Created Date"]
+    const rows = filteredAndSortedPOs.map((po) => {
+      const supplier = suppliers.find((s) => s.id === po.supplierId)
+      const dateStr = format(new Date(po.createdAt), "dd/MM/yyyy")
+      return [
+        po.poNumber,
+        po.prNumber,
+        supplier?.name || "",
+        po.description,
+        po.totalAmount.toString(),
+        `="'${dateStr}'"`,
+      ]
+    })
+
+    const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n")
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = `po-list-${format(new Date(), "yyyy-MM-dd")}.csv`
+    link.click()
+  }
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) setCurrentPage(page)
+  }
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold">Purchase Orders (PO)</h1>
+          <p className="text-sm md:text-base text-muted-foreground mt-1">จัดการใบสั่งซื้อทั้งหมด</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportToCSV}
+            className="flex-1 sm:flex-none border-success text-success hover:bg-success hover:text-white transition-colors"
+          >
+            <FileSpreadsheet className="mr-2 h-4 w-4 " />
+            <span className="hidden sm:inline cursor-pointer">Export CSV</span>
+            <span className="sm:hidden">CSV</span>
+          </Button>
+
+          <Link href="/po/new" className="flex-1 sm:flex-none">
+            <Button className="w-full bg-primary hover:bg-primary/90 text-white cursor-pointer">
+              <Plus className="mr-2 h-4 w-4" />
+              สร้าง PO ใหม่
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* ตัวกรอง */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+            <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="ค้นหาด้วยเลข PO, Supplier, หรือรายละเอียด..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 w-full"
+                />
+              </div>
+
+              <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "latest" | "oldest")}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="latest">ล่าสุดก่อน</SelectItem>
+                  <SelectItem value="oldest">เก่าก่อน</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-full sm:w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 รายการ</SelectItem>
+                  <SelectItem value="10">10 รายการ</SelectItem>
+                  <SelectItem value="20">20 รายการ</SelectItem>
+                  <SelectItem value="50">50 รายการ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ตาราง */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg md:text-xl">รายการ PO ทั้งหมด</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="inline-block min-w-full align-middle">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">เลข PO</TableHead>
+                    <TableHead className="whitespace-nowrap">เลข PR</TableHead>
+                    <TableHead className="whitespace-nowrap hidden lg:table-cell">Supplier</TableHead>
+                    <TableHead className="whitespace-nowrap hidden md:table-cell">รายละเอียด</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">จำนวนเงิน</TableHead>
+                    <TableHead className="whitespace-nowrap hidden sm:table-cell">วันที่สร้าง</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedPOs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                        <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p className="text-lg font-medium">ไม่พบข้อมูล PO</p>
+                        <p className="text-sm mt-1">ลองเปลี่ยนตัวกรอง</p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedPOs.map((po) => {
+                      const supplier = suppliers.find((s) => s.id === po.supplierId)
+                      return (
+                        <TableRow key={po.id}>
+                          <TableCell className="font-medium whitespace-nowrap">{po.poNumber}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <Link href={`/pr/${po.prId}`} className="text-primary hover:underline">
+                              {po.prNumber}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">{supplier?.name || "-"}</TableCell>
+                          <TableCell className="hidden md:table-cell max-w-xs truncate">{po.description}</TableCell>
+                          <TableCell className="text-right font-medium whitespace-nowrap">
+                            {formatCurrency(po.totalAmount)}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell whitespace-nowrap">
+                            {new Date(po.createdAt).toLocaleDateString("th-TH", {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Link href={`/po/${po.id}`}>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 cursor-pointer">
+                                        <Eye className="h-4 w-4" />
+                                      </Button>
+                                    </Link>
+                                  </TooltipTrigger>
+                                  <TooltipContent>ดูรายละเอียด</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Link href={`/po/${po.id}/edit`}>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-600 cursor-pointer">
+                                        <Edit className="h-4 w-4" />
+                                      </Button>
+                                    </Link>
+                                  </TooltipTrigger>
+                                  <TooltipContent>แก้ไข</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-red-600 hover:text-red-700 cursor-pointer"
+                                      onClick={() => handleDelete(po.id, po.poNumber)} // ส่ง poNumber
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>ลบ</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          {totalItems > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+              <div className="text-sm text-muted-foreground">
+                แสดง {startIndex + 1}-{endIndex} จาก {totalItems} รายการ
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const pageNum = i + 1
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        className="w-9"
+                        onClick={() => goToPage(pageNum)}
+                      >
+                        {pageNum}
+                      </Button>
+                    )
+                  })}
+                  {totalPages > 5 && (
+                    <>
+                      <span className="px-2 text-sm text-muted-foreground">...</span>
+                      <Button
+                        variant={currentPage === totalPages ? "default" : "outline"}
+                        size="sm"
+                        className="w-9"
+                        onClick={() => goToPage(totalPages)}
+                      >
+                        {totalPages}
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
