@@ -23,7 +23,6 @@ interface Position {
 
 const ITEMS_PER_PAGE = 5
 
-// Default positions สำหรับ SSR
 const defaultPositions: Position[] = [
   { id: 1, name: "Programmer", department: "ฝ่าย IT", desc: "พัฒนาและดูแลระบบ" },
   { id: 2, name: "บัญชี", department: "ฝ่ายการเงิน", desc: "จัดทำรายงานทางบัญชี" },
@@ -35,23 +34,19 @@ const defaultPositions: Position[] = [
 
 export default function PositionTable() {
   const [positions, setPositions] = useState<Position[]>(defaultPositions)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const [isClient, setIsClient] = useState(false)
 
-  // client-side: โหลดจาก localStorage
+  // โหลดจาก localStorage เฉพาะ client
   useEffect(() => {
+    setIsClient(true)
     const saved = localStorage.getItem("positions")
-    if (saved) {
-      setPositions(JSON.parse(saved))
-    }
-    setIsLoaded(true)
+    if (saved) setPositions(JSON.parse(saved))
   }, [])
 
-  // client-side: save to localStorage
+  // บันทึกกลับ localStorage
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("positions", JSON.stringify(positions))
-    }
-  }, [positions, isLoaded])
+    if (isClient) localStorage.setItem("positions", JSON.stringify(positions))
+  }, [positions, isClient])
 
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
@@ -61,23 +56,19 @@ export default function PositionTable() {
   const [newPosition, setNewPosition] = useState({ name: "", department: "", desc: "" })
   const [editForm, setEditForm] = useState({ name: "", department: "", desc: "" })
 
-  // filter positions ตาม searchTerm
   const filtered = useMemo(() => {
-    if (!searchTerm) return positions
     return positions.filter(p =>
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.desc.toLowerCase().includes(searchTerm.toLowerCase())
     )
   }, [positions, searchTerm])
 
-  // pagination
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE
     return filtered.slice(start, start + ITEMS_PER_PAGE)
   }, [filtered, currentPage])
 
-  // handlers
   const handleAdd = () => {
     if (!newPosition.name || !newPosition.department) return
     const newId = Math.max(...positions.map(p => p.id), 0) + 1
@@ -117,8 +108,7 @@ export default function PositionTable() {
           <h1 className="text-3xl font-bold text-black">จัดการตำแหน่งงาน</h1>
         </div>
         <Button onClick={() => setIsAddOpen(true)} className="gap-2 cursor-pointer">
-          <Plus className="h-4 w-4" />
-          เพิ่มตำแหน่ง
+          <Plus className="h-4 w-4" /> เพิ่มตำแหน่ง
         </Button>
       </div>
 
@@ -156,18 +146,10 @@ export default function PositionTable() {
                   <td className="p-3">{p.department}</td>
                   <td className="p-3 text-muted-foreground">{p.desc}</td>
                   <td className="p-3 text-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEditStart(p)}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleEditStart(p)}>
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(p.id)}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleDelete(p.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </td>
@@ -182,22 +164,8 @@ export default function PositionTable() {
         <div className="flex justify-between items-center">
           <p className="text-sm text-muted-foreground">หน้า {currentPage} จาก {totalPages}</p>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              ก่อนหน้า
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              ถัดไป
-            </Button>
+            <Button size="sm" variant="outline" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>ก่อนหน้า</Button>
+            <Button size="sm" variant="outline" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>ถัดไป</Button>
           </div>
         </div>
       )}
@@ -212,27 +180,15 @@ export default function PositionTable() {
           <div className="space-y-4">
             <div>
               <Label>ชื่อตำแหน่ง</Label>
-              <Input
-                value={newPosition.name}
-                onChange={e => setNewPosition({ ...newPosition, name: e.target.value })}
-                placeholder="เช่น Programmer"
-              />
+              <Input value={newPosition.name} onChange={e => setNewPosition({ ...newPosition, name: e.target.value })} placeholder="เช่น Programmer" />
             </div>
             <div>
               <Label>ฝ่าย/หน่วยงาน</Label>
-              <Input
-                value={newPosition.department}
-                onChange={e => setNewPosition({ ...newPosition, department: e.target.value })}
-                placeholder="เช่น ฝ่าย IT"
-              />
+              <Input value={newPosition.department} onChange={e => setNewPosition({ ...newPosition, department: e.target.value })} placeholder="เช่น ฝ่าย IT" />
             </div>
             <div>
               <Label>รายละเอียด</Label>
-              <Input
-                value={newPosition.desc}
-                onChange={e => setNewPosition({ ...newPosition, desc: e.target.value })}
-                placeholder="เช่น พัฒนาระบบ..."
-              />
+              <Input value={newPosition.desc} onChange={e => setNewPosition({ ...newPosition, desc: e.target.value })} placeholder="เช่น พัฒนาระบบ..." />
             </div>
           </div>
           <DialogFooter>
@@ -251,24 +207,15 @@ export default function PositionTable() {
           <div className="space-y-4">
             <div>
               <Label>ชื่อตำแหน่ง</Label>
-              <Input
-                value={editForm.name}
-                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-              />
+              <Input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div>
               <Label>ฝ่าย/หน่วยงาน</Label>
-              <Input
-                value={editForm.department}
-                onChange={e => setEditForm({ ...editForm, department: e.target.value })}
-              />
+              <Input value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} />
             </div>
             <div>
               <Label>รายละเอียด</Label>
-              <Input
-                value={editForm.desc}
-                onChange={e => setEditForm({ ...editForm, desc: e.target.value })}
-              />
+              <Input value={editForm.desc} onChange={e => setEditForm({ ...editForm, desc: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
