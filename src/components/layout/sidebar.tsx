@@ -16,6 +16,8 @@ import {
   User,
   MapPin,
   Building2,
+  Wrench,
+  ClipboardList,
 } from "lucide-react"
 
 const navigation = [
@@ -29,8 +31,8 @@ const navigation = [
       { name: "Projects", href: "/project", icon: FolderKanban },
       { name: "Purchase Requisition", href: "/pr", icon: FileText },
       { name: "Purchase Order", href: "/po", icon: ShoppingCart },
-      { name: "Work Request", href: "/wr", icon: ShoppingCart },
-      { name: "Work Order", href: "/wo", icon: ShoppingCart },
+      { name: "Work Request", href: "/wr", icon: Wrench },
+      { name: "Work Order", href: "/wo", icon: ClipboardList },
     ],
   },
 ]
@@ -39,8 +41,8 @@ const trashItems = [
   { label: "Projects", href: "/trash/project", icon: FolderKanban },
   { label: "PR", href: "/trash/pr", icon: FileText },
   { label: "PO", href: "/trash/po", icon: ShoppingCart },
-  { label: "WR", href: "/trash/wr", icon: ShoppingCart },
-  { label: "WO", href: "/trash/wo", icon: ShoppingCart },
+  { label: "WR", href: "/trash/wr", icon: Wrench },
+  { label: "WO", href: "/trash/wo", icon: ClipboardList },
 ]
 
 const settingsItems = [
