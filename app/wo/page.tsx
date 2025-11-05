@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useMemo } from "react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useState, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -11,105 +11,188 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Search, Plus, Eye, Edit, Trash2 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+} from "@/components/ui/select";
+import { Search, Plus, Eye, Edit, Trash2 } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface WorkOrder {
-  id: number
-  workRequestId: number
-  orderNumber: string
-  title: string
-  assignedTo: number
-  status: "Draft" | "Approved" | "In Progress" | "Completed" | "Cancelled"
-  totalCost: number
-  createdAt: string
-  deleted?: boolean
-  deletedAt?: string
+  id: number;
+  workRequestId: number;
+  orderNumber: string;
+  title: string;
+  assignedTo: number;
+  status: "Draft" | "Approved" | "In Progress" | "Completed" | "Cancelled";
+  totalCost: number;
+  createdAt: string;
+  deleted?: boolean;
+  deletedAt?: string;
 }
-interface WorkRequest { id: number; title: string }
-interface Employee { id: number; name: string }
+interface WorkRequest {
+  id: number;
+  title: string;
+}
+interface Employee {
+  id: number;
+  name: string;
+}
 
-const ITEMS_PER_PAGE = 5
-const STATUSES = ["Draft","Approved","In Progress","Completed","Cancelled"] as const
+const ITEMS_PER_PAGE = 5;
+const STATUSES = ["Draft", "Approved", "In Progress", "Completed", "Cancelled"] as const;
 
 export default function WorkOrderList() {
-  const [orders, setOrders] = useState<WorkOrder[]>([])
-  const [requests, setRequests] = useState<WorkRequest[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
+  const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [requests, setRequests] = useState<WorkRequest[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // โหลดข้อมูลทั้งหมดใน useEffect (client-side เท่านั้น)
   useEffect(() => {
-    const o = localStorage.getItem("work-orders")
-    if (o) setOrders(JSON.parse(o))
+    const loadData = () => {
+      try {
+        // โหลด work-orders
+        const ordersRaw = localStorage.getItem("work-orders");
+        if (ordersRaw) {
+          setOrders(JSON.parse(ordersRaw));
+        }
 
-    const r = localStorage.getItem("work-requests")
-    if (r) setRequests(JSON.parse(r))
+        // โหลด work-requests
+        const requestsRaw = localStorage.getItem("work-requests");
+        if (requestsRaw) {
+          setRequests(JSON.parse(requestsRaw));
+        }
 
-    const e = localStorage.getItem("organization-employees")
-    if (e) setEmployees(JSON.parse(e))
-  }, [])
+        // โหลด employees
+        const employeesRaw = localStorage.getItem("organization-employees");
+        if (employeesRaw) {
+          setEmployees(JSON.parse(employeesRaw));
+        }
+      } catch (err) {
+        setError("ไม่สามารถโหลดข้อมูลได้ กรุณารีเฟรชหน้า");
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [page, setPage] = useState(1)
+    loadData();
+  }, []);
+
+  // UI State
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
 
   // กรองเฉพาะที่ยังไม่ถูกลบ
-  const activeOrders = useMemo(() => orders.filter(o => !o.deleted), [orders])
+  const activeOrders = useMemo(() => {
+    return orders.filter((o) => !o.deleted);
+  }, [orders]);
 
+  // กรองตามค้นหา + สถานะ
   const filtered = useMemo(() => {
-    return activeOrders.filter(o => {
-      const req = requests.find(r => r.id === o.workRequestId)
-      const emp = employees.find(e => e.id === o.assignedTo)
+    return activeOrders.filter((o) => {
+      const req = requests.find((r) => r.id === o.workRequestId);
+      const emp = employees.find((e) => e.id === o.assignedTo);
       const matchSearch =
         o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         o.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req?.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp?.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchStatus = statusFilter === "all" || o.status === statusFilter
-      return matchSearch && matchStatus
-    })
-  }, [activeOrders, requests, employees, searchTerm, statusFilter])
+        emp?.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchStatus = statusFilter === "all" || o.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [activeOrders, requests, employees, searchTerm, statusFilter]);
 
+  // แบ่งหน้า
   const paginated = useMemo(() => {
-    const s = (page - 1) * ITEMS_PER_PAGE
-    return filtered.slice(s, s + ITEMS_PER_PAGE)
-  }, [filtered, page])
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return filtered.slice(start, start + ITEMS_PER_PAGE);
+  }, [filtered, page]);
 
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
 
-  const getReqTitle = (id: number) => requests.find(r => r.id === id)?.title || "-"
-  const getEmpName  = (id: number) => employees.find(e => e.id === id)?.name || "-"
-  const getBadge = (s: WorkOrder["status"]) => {
+  // ฟังก์ชันช่วย
+  const getReqTitle = useCallback(
+    (id: number) => requests.find((r) => r.id === id)?.title || "-",
+    [requests]
+  );
+
+  const getEmpName = useCallback(
+    (id: number) => employees.find((e) => e.id === id)?.name || "-",
+    [employees]
+  );
+
+  const getBadge = useCallback((s: WorkOrder["status"]) => {
     const map: Record<WorkOrder["status"], string> = {
       Draft: "bg-gray-100 text-gray-800",
       Approved: "bg-blue-100 text-blue-800",
       "In Progress": "bg-yellow-100 text-yellow-800",
       Completed: "bg-green-100 text-green-800",
       Cancelled: "bg-red-100 text-red-800",
-    }
-    return <span className={`px-2 py-1 rounded-full text-xs ${map[s]}`}>{s}</span>
-  }
+    };
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${map[s]}`}>
+        {s}
+      </span>
+    );
+  }, []);
 
   // ลบ → ย้ายไปถังขยะ
-  const moveToTrash = (id: number, orderNumber: string) => {
-    if (confirm(`คุณต้องการลบคำสั่งงาน "${orderNumber}" หรือไม่?\n\nข้อมูลจะถูกย้ายไป "ถังขยะ" และสามารถกู้คืนได้`)) {
-      setOrders(prev => prev.map(o =>
-        o.id === id
-          ? { ...o, deleted: true, deletedAt: new Date().toISOString() }
-          : o
-      ))
-    }
+  const moveToTrash = useCallback(
+    (id: number, orderNumber: string) => {
+      if (
+        confirm(
+          `คุณต้องการลบคำสั่งงาน "${orderNumber}" หรือไม่?\n\nข้อมูลจะถูกย้ายไป "ถังขยะ" และสามารถกู้คืนได้`
+        )
+      ) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === id
+              ? { ...o, deleted: true, deletedAt: new Date().toISOString() }
+              : o
+          )
+        );
+      }
+    },
+    []
+  );
+
+  // Reset ตัวกรอง
+  const resetFilters = useCallback(() => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setPage(1);
+  }, []);
+
+  // Loading
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-screen">
+        <p className="text-muted-foreground">กำลังโหลดข้อมูล...</p>
+      </div>
+    );
+  }
+
+  // Error
+  if (error) {
+    return (
+      <div className="p-6 text-center">
+        <p className="text-destructive mb-4">{error}</p>
+        <Button onClick={() => window.location.reload()}>รีเฟรชหน้า</Button>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6 p-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">คำสั่งงาน (Work Order)</h1>
@@ -123,8 +206,11 @@ export default function WorkOrderList() {
         </Link>
       </div>
 
+      {/* ค้นหา / กรอง */}
       <Card>
-        <CardHeader><CardTitle>ค้นหา / กรอง</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>ค้นหา / กรอง</CardTitle>
+        </CardHeader>
         <CardContent>
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 relative">
@@ -132,24 +218,40 @@ export default function WorkOrderList() {
               <Input
                 placeholder="เลขที่, ชื่อ, คำขอ, ผู้รับ..."
                 value={searchTerm}
-                onChange={e => { setSearchTerm(e.target.value); setPage(1) }}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-10"
               />
             </div>
-            <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-              <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="สถานะ" /></SelectTrigger>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-full lg:w-48">
+                <SelectValue placeholder="สถานะ" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">ทุกสถานะ</SelectItem>
-                {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={() => { setSearchTerm(""); setStatusFilter("all"); setPage(1) }}>
+            <Button variant="outline" onClick={resetFilters}>
               ล้าง
             </Button>
           </div>
         </CardContent>
       </Card>
 
+      {/* ตาราง */}
       <Card>
         <CardHeader>
           <CardTitle>รายการคำสั่งงาน</CardTitle>
@@ -178,7 +280,7 @@ export default function WorkOrderList() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginated.map(o => (
+                  paginated.map((o) => (
                     <TableRow key={o.id}>
                       <TableCell className="font-medium">{o.orderNumber}</TableCell>
                       <TableCell>{getReqTitle(o.workRequestId)}</TableCell>
@@ -188,10 +290,14 @@ export default function WorkOrderList() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Link href={`/wo/${o.id}`}>
-                            <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm">
+                              <Eye className="h-4 w-4" />
+                            </Button>
                           </Link>
                           <Link href={`/wo/${o.id}/edit`}>
-                            <Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
                           </Link>
                           <Button
                             variant="ghost"
@@ -210,17 +316,34 @@ export default function WorkOrderList() {
             </Table>
           </div>
 
+          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-muted-foreground">หน้า {page} / {totalPages}</p>
+              <p className="text-sm text-muted-foreground">
+                หน้า {page} / {totalPages}
+              </p>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1}>ก่อนหน้า</Button>
-                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages}>ถัดไป</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  ก่อนหน้า
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                >
+                  ถัดไป
+                </Button>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
