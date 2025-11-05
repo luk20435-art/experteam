@@ -36,12 +36,15 @@ const DataContext = createContext<DataContextType | undefined>(undefined)
 export function DataProvider({ children }: { children: ReactNode }) {
   const [prs, setPRs] = useState<PurchaseRequisition[]>([])
   const [pos, setPOs] = useState<PurchaseOrder[]>([])
-  const [suppliers] = useState<Supplier[]>(mockSuppliers)
   const [projects, setProjects] = useState<Project[]>([])
+  const [suppliers] = useState<Supplier[]>(mockSuppliers)
+  const [isLoaded, setIsLoaded] = useState(false)
 
-  // โหลดจาก localStorage
+  // โหลดข้อมูลจาก localStorage (หรือใช้ mock ถ้าไม่มี)
   useEffect(() => {
-    const loadData = () => {
+    if (typeof window === "undefined") return // ป้องกัน SSR error
+
+    try {
       const savedPRs = localStorage.getItem("prs")
       const savedPOs = localStorage.getItem("pos")
       const savedProjects = localStorage.getItem("projects")
@@ -49,95 +52,67 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setPRs(savedPRs ? JSON.parse(savedPRs) : mockPRs)
       setPOs(savedPOs ? JSON.parse(savedPOs) : mockPOs)
       setProjects(savedProjects ? JSON.parse(savedProjects) : mockProjects)
+    } catch (err) {
+      console.error("Error loading from localStorage:", err)
+      // ถ้า localStorage พัง ให้ fallback เป็น mock
+      setPRs(mockPRs)
+      setPOs(mockPOs)
+      setProjects(mockProjects)
+    } finally {
+      setIsLoaded(true)
     }
-
-    loadData()
   }, [])
 
-  // บันทึกเมื่อเปลี่ยน
+  // === บันทึกข้อมูลกลับเข้า localStorage อัตโนมัติเมื่อมีการเปลี่ยน ===
   useEffect(() => {
-    if (prs.length > 0) localStorage.setItem("prs", JSON.stringify(prs))
-  }, [prs])
+    if (!isLoaded || typeof window === "undefined") return
+    localStorage.setItem("prs", JSON.stringify(prs))
+  }, [prs, isLoaded])
 
   useEffect(() => {
-    if (pos.length > 0) localStorage.setItem("pos", JSON.stringify(pos))
-  }, [pos])
+    if (!isLoaded || typeof window === "undefined") return
+    localStorage.setItem("pos", JSON.stringify(pos))
+  }, [pos, isLoaded])
 
   useEffect(() => {
-    if (projects.length > 0) localStorage.setItem("projects", JSON.stringify(projects))
-  }, [projects])
+    if (!isLoaded || typeof window === "undefined") return
+    localStorage.setItem("projects", JSON.stringify(projects))
+  }, [projects, isLoaded])
 
   // === PR ===
-  const addPR = (pr: PurchaseRequisition) => {
-    setPRs((prev) => [...prev, pr])
-  }
-
+  const addPR = (pr: PurchaseRequisition) => setPRs((prev) => [...prev, pr])
   const updatePR = (id: string, updates: Partial<PurchaseRequisition>) => {
     setPRs((prev) =>
       prev.map((pr) => (pr.id === id ? { ...pr, ...updates, updatedAt: new Date().toISOString() } : pr))
     )
   }
-
-  const moveToTrashPR = (id: string) => {
+  const moveToTrashPR = (id: string) =>
     setPRs((prev) =>
-      prev.map((pr) =>
-        pr.id === id
-          ? { ...pr, deleted: true, deletedAt: new Date().toISOString() }
-          : pr
-      )
+      prev.map((pr) => (pr.id === id ? { ...pr, deleted: true, deletedAt: new Date().toISOString() } : pr))
     )
-  }
-
-  const restorePR = (id: string) => {
-    setPRs((prev) =>
-      prev.map((pr) => (pr.id === id ? { ...pr, deleted: false, deletedAt: undefined } : pr))
-    )
-  }
-
-  const permanentlyDeletePR = (id: string) => {
-    setPRs((prev) => prev.filter((pr) => pr.id !== id))
-  }
-
+  const restorePR = (id: string) =>
+    setPRs((prev) => prev.map((pr) => (pr.id === id ? { ...pr, deleted: false, deletedAt: undefined } : pr)))
+  const permanentlyDeletePR = (id: string) => setPRs((prev) => prev.filter((pr) => pr.id !== id))
   const getPR = (id: string) => prs.find((pr) => pr.id === id)
 
   // === PO ===
-  const addPO = (po: PurchaseOrder) => {
-    setPOs((prev) => [...prev, po])
-  }
-
+  const addPO = (po: PurchaseOrder) => setPOs((prev) => [...prev, po])
   const updatePO = (id: string, updates: Partial<PurchaseOrder>) => {
     setPOs((prev) =>
       prev.map((po) => (po.id === id ? { ...po, ...updates, updatedAt: new Date().toISOString() } : po))
     )
   }
-
-  const moveToTrashPO = (id: string) => {
+  const moveToTrashPO = (id: string) =>
     setPOs((prev) =>
-      prev.map((po) =>
-        po.id === id
-          ? { ...po, deleted: true, deletedAt: new Date().toISOString() }
-          : po
-      )
+      prev.map((po) => (po.id === id ? { ...po, deleted: true, deletedAt: new Date().toISOString() } : po))
     )
-  }
-
-  const restorePO = (id: string) => {
-    setPOs((prev) =>
-      prev.map((po) => (po.id === id ? { ...po, deleted: false, deletedAt: undefined } : po))
-    )
-  }
-
-  const permanentlyDeletePO = (id: string) => {
-    setPOs((prev) => prev.filter((po) => po.id !== id))
-  }
-
+  const restorePO = (id: string) =>
+    setPOs((prev) => prev.map((po) => (po.id === id ? { ...po, deleted: false, deletedAt: undefined } : po)))
+  const permanentlyDeletePO = (id: string) => setPOs((prev) => prev.filter((po) => po.id !== id))
   const getPO = (id: string) => pos.find((po) => po.id === id)
 
   // === Project ===
-  const addProject = (project: Project) => {
-    setProjects((prev) => [...prev, project])
-  }
-
+  const addProject = (project: Project) => setProjects((prev) => [...prev, project])
   const updateProject = (id: string, updates: Partial<Project>) => {
     setProjects((prev) =>
       prev.map((project) => {
@@ -153,28 +128,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       })
     )
   }
-
-  const moveToTrashProject = (id: string) => {
+  const moveToTrashProject = (id: string) =>
     setProjects((prev) =>
       prev.map((project) =>
-        project.id === id
-          ? { ...project, deleted: true, deletedAt: new Date().toISOString() }
-          : project
+        project.id === id ? { ...project, deleted: true, deletedAt: new Date().toISOString() } : project
       )
     )
-  }
-
-  const restoreProject = (id: string) => {
+  const restoreProject = (id: string) =>
     setProjects((prev) =>
       prev.map((project) => (project.id === id ? { ...project, deleted: false, deletedAt: undefined } : project))
     )
-  }
-
-  const permanentlyDeleteProject = (id: string) => {
-    setProjects((prev) => prev.filter((project) => project.id !== id))
-  }
-
+  const permanentlyDeleteProject = (id: string) => setProjects((prev) => prev.filter((p) => p.id !== id))
   const getProject = (id: string) => projects.find((project) => project.id === id)
+
+  // แสดง loading สั้น ๆ ก่อน render (ป้องกันจอดำหรือ state เพี้ยน)
+  if (!isLoaded) {
+    return <div className="p-6 text-gray-500 text-sm">Loading saved data...</div>
+  }
 
   return (
     <DataContext.Provider
@@ -210,8 +180,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
 export function useData() {
   const context = useContext(DataContext)
-  if (!context) {
-    throw new Error("useData must be used within DataProvider")
-  }
+  if (!context) throw new Error("useData must be used within DataProvider")
   return context
 }
