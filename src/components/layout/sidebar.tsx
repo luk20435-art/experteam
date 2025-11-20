@@ -4,7 +4,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/app/lib/utils"
 import {
   LayoutDashboard,
   FileText,
@@ -18,6 +18,14 @@ import {
   Building2,
   Wrench,
   ClipboardList,
+  Building,
+  FolderTree,
+  UserCheck,
+  UserCog,
+  Briefcase,
+  Users,
+  Store,
+  Handshake,
 } from "lucide-react"
 
 const navigation = [
@@ -28,17 +36,19 @@ const navigation = [
   {
     group: "Management",
     items: [
-      { name: "Projects", href: "/project", icon: FolderKanban },
+      { name: "Jobs", href: "/project", icon: FolderKanban },
       { name: "Purchase Requisition", href: "/pr", icon: FileText },
       { name: "Purchase Order", href: "/po", icon: ShoppingCart },
       { name: "Work Request", href: "/wr", icon: Wrench },
       { name: "Work Order", href: "/wo", icon: ClipboardList },
+      { name: "Traders", href: "/client", icon: Handshake },
+      { name: "Suppliers", href: "/supplier", icon: Store },
     ],
   },
 ]
 
 const trashItems = [
-  { label: "Projects", href: "/trash/project", icon: FolderKanban },
+  { label: "Jobs", href: "/trash/project", icon: FolderKanban },
   { label: "PR", href: "/trash/pr", icon: FileText },
   { label: "PO", href: "/trash/po", icon: ShoppingCart },
   { label: "WR", href: "/trash/wr", icon: Wrench },
@@ -46,10 +56,37 @@ const trashItems = [
 ]
 
 const settingsItems = [
-  { label: "Users", href: "/settings/users", icon: User },
-  { label: "Positions", href: "/settings/positions", icon: MapPin },
-  { label: "Organizations", href: "/settings/organizations", icon: Building2 },
-]
+  {
+    label: "Users",
+    href: "/settings/users",
+    icon: Users,
+  },
+  {
+    label: "Positions",
+    href: "/settings/positions",
+    icon: Briefcase,
+  },
+  {
+    label: "Employees",
+    href: "/settings/employees",
+    icon: UserCog,
+  },
+  {
+    label: "Employee Positions",
+    href: "/settings/employee_positions",
+    icon: UserCheck,
+  },
+  {
+    label: "Departments",
+    href: "/settings/departments",
+    icon: FolderTree,
+  },
+  {
+    label: "Organizations",
+    href: "/settings/organizations",
+    icon: Building,
+  },
+];
 
 interface SidebarProps {
   isOpen: boolean
@@ -75,27 +112,27 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "h-full flex flex-col border-r border-border bg-gradient-to-b from-card to-card/95 transition-all duration-300 ease-in-out shadow-lg",
+        "h-full flex flex-col border-r-2 border-gray-700 bg-gradient-to-b from-gray-800 via-gray-900 to-gray-800 transition-all duration-300 ease-in-out shadow-xl",
         isOpen ? "w-64" : "w-0 lg:w-16",
         !isOpen && "overflow-hidden"
       )}
     >
       {/* Logo Section */}
-      <div className="flex h-16 items-center border-b border-border/50 px-4 md:px-6 bg-gradient-to-r from-primary/10 to-primary/5">
+      <div className="flex h-16 items-center border-b-2 border-gray-700 px-4 md:px-6 bg-gradient-to-r from-gray-900 to-gray-800">
         <div className="flex items-center gap-3">
-          <div className="p-1.5 rounded-lg bg-gradient-to-br from-primary to-primary/70 shadow-md">
-            <img
-              src="/images.jpg"
+          <div className="p-1.5 rounded-lg bg-white shadow-lg">
+            {/* <img
+              src="/images/face.png"
               alt="Experteam Logo"
               className={cn(
                 "object-contain transition-all duration-300 h-6 w-6",
                 !isOpen && "sm:h-7 sm:w-7 md:h-8 md:w-8 lg:h-6 lg:w-6"
               )}
-            />
+            /> */}
           </div>
           <h1
             className={cn(
-              "text-lg font-bold bg-gradient-to-r from-primary via-primary to-primary/70 bg-clip-text text-transparent whitespace-nowrap transition-all duration-300",
+              "text-lg font-bold text-white whitespace-nowrap transition-all duration-300",
               !isOpen && "lg:opacity-0 lg:w-0 lg:overflow-hidden"
             )}
           >
@@ -105,16 +142,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       </div>
 
       {/* Navigation Content */}
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-6 md:px-3">
+      <nav className="flex-1 space-y-4 overflow-y-auto px-0 py-6">
         {/* Main Navigation */}
         {navigation.map((section) => (
           <div key={section.group} className="space-y-3">
             {isOpen && (
-              <h3 className="px-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
-                {section.group}
-              </h3>
+              <div className="px-4 py-2.5 bg-sky-600">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-white drop-shadow-sm">
+                  {section.group}
+                </h3>
+              </div>
             )}
-            <div className="space-y-1.5">
+            <div className="space-y-2 px-3">
               {section.items.map((item) => {
                 const isActive = pathname === item.href
                 return (
@@ -123,18 +162,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     href={item.href}
                     onClick={handleNavClick}
                     className={cn(
-                      "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      "group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200",
                       isActive
-                        ? "bg-gradient-to-r from-primary to-primary/90 text-primary-foreground shadow-md hover:shadow-lg"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:shadow-sm",
-                      !isOpen && "lg:justify-center lg:px-2"
+                        ? "bg-yellow-400 text-gray-900 shadow-lg scale-105"
+                        : "text-gray-300 hover:bg-yellow-400 hover:text-gray-900 hover:shadow-md",
+                      !isOpen && "lg:justify-center lg:px-3"
                     )}
                     title={!isOpen ? item.name : undefined}
                   >
                     <item.icon
                       className={cn(
                         "h-5 w-5 flex-shrink-0 transition-all duration-200",
-                        !isActive && "group-hover:scale-110 group-hover:text-primary"
+                        isActive && "text-gray-900",
+                        !isActive && "text-gray-400 group-hover:scale-125 group-hover:text-gray-900"
                       )}
                     />
                     <span
@@ -155,34 +195,36 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Divider */}
         <div
           className={cn(
-            "my-4 mx-auto border-t border-border/30 transition-all duration-300",
-            isOpen ? "w-3/4" : "hidden lg:block w-8"
+            "my-4 mx-0 border-t-2 border-gray-700 transition-all duration-300",
+            isOpen ? "w-full" : "hidden lg:block w-8"
           )}
         />
 
         {/* Utility Section: Trash */}
         <div className="space-y-3">
           {isOpen && (
-            <h3 className="px-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
-              Utility
-            </h3>
+            <div className="px-4 py-2.5 bg-sky-600">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-white drop-shadow-sm">
+                Utility
+              </h3>
+            </div>
           )}
-          <div>
+          <div className="px-3">
             <button
               onClick={() => setIsTrashOpen(!isTrashOpen)}
               className={cn(
-                "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200",
                 pathname.startsWith("/trash")
-                  ? "bg-gradient-to-r from-destructive/20 to-destructive/10 text-destructive hover:from-destructive/30 hover:to-destructive/20"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:shadow-sm",
-                !isOpen && "lg:justify-center lg:px-2"
+                  ? "bg-yellow-400 text-gray-900 shadow-lg scale-105"
+                  : "text-gray-300 hover:bg-yellow-400 hover:text-gray-900 hover:shadow-md",
+                !isOpen && "lg:justify-center lg:px-3"
               )}
               title={!isOpen ? "Trash" : undefined}
             >
               <Trash2
                 className={cn(
                   "h-5 w-5 flex-shrink-0 transition-all duration-200",
-                  pathname.startsWith("/trash") ? "text-destructive" : "group-hover:scale-110"
+                  pathname.startsWith("/trash") ? "text-gray-900" : "text-gray-400 group-hover:scale-125 group-hover:text-gray-900"
                 )}
               />
               <span
@@ -205,20 +247,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
             {/* Trash Dropdown Items */}
             {isOpen && isTrashOpen && (
-              <div className="mt-2 space-y-1.5 pl-8 border-l-2 border-destructive/20 ml-5">
+              <div className="mt-2 space-y-1.5 pl-4 border-l-4 border-gray-600 ml-2">
                 {trashItems.map(({ label, href, icon: Icon }) => (
                   <Link
                     key={href}
                     href={href}
                     onClick={handleNavClick}
                     className={cn(
-                      "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200",
+                      "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                       pathname === href
-                        ? "bg-destructive/10 text-destructive font-medium"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                        ? "bg-yellow-300 text-gray-900 font-bold"
+                        : "text-gray-400 hover:text-gray-900 hover:bg-yellow-300"
                     )}
                   >
-                    <Icon className="h-4 w-4 flex-shrink-0 transition-transform group-hover:scale-110" />
+                    <Icon className="h-4 w-4 flex-shrink-0 transition-transform group-hover:scale-125" />
                     <span>{label}</span>
                   </Link>
                 ))}
@@ -230,26 +272,28 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Configuration Section: Settings */}
         <div className="space-y-3">
           {isOpen && (
-            <h3 className="px-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
-              Configuration
-            </h3>
+            <div className="px-4 py-2.5 bg-sky-600">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-white drop-shadow-sm">
+                Configuration
+              </h3>
+            </div>
           )}
-          <div>
+          <div className="px-3">
             <button
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
               className={cn(
-                "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200",
                 pathname.startsWith("/settings")
-                  ? "bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-600 hover:from-blue-500/30 hover:to-blue-500/20"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:shadow-sm",
-                !isOpen && "lg:justify-center lg:px-2"
+                  ? "bg-yellow-400 text-gray-900 shadow-lg scale-105"
+                  : "text-gray-300 hover:bg-yellow-400 hover:text-gray-900 hover:shadow-md",
+                !isOpen && "lg:justify-center lg:px-3"
               )}
               title={!isOpen ? "Settings" : undefined}
             >
               <Sliders
                 className={cn(
                   "h-5 w-5 flex-shrink-0 transition-all duration-200",
-                  pathname.startsWith("/settings") ? "text-blue-600" : "group-hover:scale-110"
+                  pathname.startsWith("/settings") ? "text-gray-900" : "text-gray-400 group-hover:scale-125 group-hover:text-gray-900"
                 )}
               />
               <span
@@ -272,20 +316,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
             {/* Settings Dropdown Items */}
             {isOpen && isSettingsOpen && (
-              <div className="mt-2 space-y-1.5 pl-8 border-l-2 border-blue-500/20 ml-5">
+              <div className="mt-2 space-y-1.5 pl-4 border-l-4 border-gray-600 ml-2">
                 {settingsItems.map(({ label, href, icon: Icon }) => (
                   <Link
                     key={href}
                     href={href}
                     onClick={handleNavClick}
                     className={cn(
-                      "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200",
+                      "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                       pathname === href
-                        ? "bg-blue-500/10 text-blue-600 font-medium"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                        ? "bg-yellow-300 text-gray-900 font-bold"
+                        : "text-gray-400 hover:text-gray-900 hover:bg-yellow-300"
                     )}
                   >
-                    <Icon className="h-4 w-4 flex-shrink-0 transition-transform group-hover:scale-110" />
+                    <Icon className="h-4 w-4 flex-shrink-0 transition-transform group-hover:scale-125" />
                     <span>{label}</span>
                   </Link>
                 ))}

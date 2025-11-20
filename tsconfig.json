@@ -22,10 +22,11 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".", // สำคัญ: ต้องมี!
     "paths": {
       "@/*": [
         "./*"
-      ],
+      ], // ทุกอย่างจาก root
       "@/components/*": [
         "./components/*"
       ],
@@ -36,8 +37,8 @@
         "./src/*"
       ],
       "@/lib/*": [
-        "./lib/*"
-      ]
+        "./app/lib/*"
+      ] // ถูกต้อง: ชี้ไปที่ app/lib
     }
   },
   "include": [
@@ -45,7 +46,6 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
     ".next\\dev/types/**/*.ts",
     ".next\\dev/types/**/*.ts"
   ],

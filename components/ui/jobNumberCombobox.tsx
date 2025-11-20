@@ -5,7 +5,7 @@ import { Check, ChevronsUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
-import { cn } from "@/lib/utils"
+import { cn } from "@/app/lib/utils"
 
 interface JobOption {
   value: string

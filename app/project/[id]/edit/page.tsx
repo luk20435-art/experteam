@@ -1,357 +1,485 @@
 "use client"
 
-import type React from "react"
-
 import { useParams, useRouter } from "next/navigation"
 import { useData } from "@/src/contexts/data-context"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Save, AlertCircle } from "lucide-react"
-import { useState, useEffect } from "react"
-import type { Project, ProjectSection } from "@/src/types"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { ArrowLeft, Save, Building2, Phone, Mail, DollarSign, FileText, Hash, Tag, Clock, Users } from "lucide-react"
+import { useEffect, useState } from "react"
+import {
+  Combobox,
+  ComboboxButton,
+  ComboboxInput,
+  ComboboxOption,
+  ComboboxOptions,
+} from "@headlessui/react"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { useToast } from "@/hooks/use-toast"
 
 export default function EditProjectPage() {
   const params = useParams()
   const router = useRouter()
-  const { getProject, updateProject } = useData()
-
+  const { getProject, updateProject, clients } = useData()
+  const { toast } = useToast()
   const project = getProject(params.id as string)
 
-  const [formData, setFormData] = useState<Partial<Project>>({
-    name: "",
-    code: "",
+  const [formValues, setFormValues] = useState({
+    jobName: "",
+    jobCode: "",
+    traderId: "",
+    ccNo: "",
+    jobNo: "",
+    waNumber: "",
+    wrPoSrRoNumber: "",
+    expteamQuotation: "",
+    contactPerson: "",
+    contactEmail: "",
+    estimatedPrCost: "",
     description: "",
     startDate: "",
     endDate: "",
-    sections: [],
+    status: "planning" as any,
+    material: "",
+    manPower: "",
+    op: "",
+    ie: "",
+    supply: "",
+    engineer: "",
+    contactNumber: "",
+
   })
 
   useEffect(() => {
-    if (project) {
-      setFormData({
-        name: project.name,
-        code: project.projectNumber,
-        description: project.description,
-        status: project.status,
-        startDate: project.startDate,
-        endDate: project.endDate,
-        sections: project.sections,
+    if (project && clients.length > 0) {
+      const sectionMap: any = {}
+      project.sections.forEach((sec: any) => {
+        const key = sec.name.toLowerCase().replace(" ", "") as keyof typeof formValues
+        sectionMap[key] = sec.budget.toString()
+      })
+
+      const traderClient = clients.find(c => c.name === project.trader)
+      const traderId = traderClient ? traderClient.id : ""
+
+      setFormValues({
+        jobName: project.name || "",
+        jobCode: project.code || "",
+        traderId,
+        ccNo: project.ccNo || "",
+        jobNo: project.jobNo || "",
+        waNumber: project.waNumber || "",
+        wrPoSrRoNumber: project.wrPoSrRoNumber || "",
+        expteamQuotation: project.expteamQuotation || "",
+        contactPerson: project.contactPerson || "",
+        contactEmail: project.contactEmail || "",
+        estimatedPrCost: project.estimatedPrCost || "",
+        contactNumber: project.contactNumber || "",
+        description: project.description || "",
+        startDate: project.startDate || "",
+        endDate: project.endDate || "",
+        status: project.status || "planning",
+        ...sectionMap,
       })
     }
-  }, [project])
+  }, [project, clients])
 
   if (!project) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-foreground">Project not found</h2>
-          <p className="mt-2 text-muted-foreground">The project you're looking for doesn't exist.</p>
-          <Button onClick={() => router.push("/project")} className="mt-4">
-            Back to Projects
-          </Button>
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="text-center space-y-4 bg-white p-8 rounded-2xl shadow-lg">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto"></div>
+          <p className="text-xl text-slate-900">กำลังโหลด...</p>
         </div>
       </div>
     )
   }
 
+  const calculateDuration = () => {
+    if (!formValues.startDate || !formValues.endDate) return 0
+    const s = new Date(formValues.startDate)
+    const e = new Date(formValues.endDate)
+    return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.name || !formData.code || !formData.startDate || !formData.endDate) {
-      alert("Please fill in all required fields")
-      return
+    const sections = [
+      { id: `sec-${Date.now()}-1`, name: "Material" as const, budget: Number(formValues.material) || 0, spent: 0, progress: 0, items: [], remarks: "" },
+      { id: `sec-${Date.now()}-2`, name: "Man Power" as const, budget: Number(formValues.manPower) || 0, spent: 0, progress: 0, items: [], remarks: "" },
+      { id: `sec-${Date.now()}-3`, name: "OP" as const, budget: Number(formValues.op) || 0, spent: 0, progress: 0, items: [], remarks: "" },
+      { id: `sec-${Date.now()}-4`, name: "IE" as const, budget: Number(formValues.ie) || 0, spent: 0, progress: 0, items: [], remarks: "" },
+      { id: `sec-${Date.now()}-5`, name: "Supply" as const, budget: Number(formValues.supply) || 0, spent: 0, progress: 0, items: [], remarks: "" },
+      { id: `sec-${Date.now()}-6`, name: "Engineer" as const, budget: Number(formValues.engineer) || 0, spent: 0, progress: 0, items: [], remarks: "" },
+    ]
+
+    const selectedClient = clients.find(c => c.id === formValues.traderId)
+    const traderName = selectedClient ? selectedClient.name : project.trader || "ไม่ระบุ"
+
+    const updatedProject = {
+      ...project,
+      name: formValues.jobName,
+      code: formValues.jobCode,
+      description: formValues.description,
+      startDate: formValues.startDate,
+      endDate: formValues.endDate,
+      status: formValues.status,
+      totalBudget: sections.reduce((sum, s) => sum + s.budget, 0),
+      sections,
+      duration: calculateDuration(),
+      ccNo: formValues.ccNo,
+      jobNo: formValues.jobNo,
+      waNumber: formValues.waNumber,
+      wrPoSrRoNumber: formValues.wrPoSrRoNumber,
+      expteamQuotation: formValues.expteamQuotation,
+      contactPerson: formValues.contactPerson,
+      contactEmail: formValues.contactEmail,
+      estimatedPrCost: formValues.estimatedPrCost,
+      trader: traderName,
+      traderId: formValues.traderId,
+      contactNumber: formValues.contactNumber,
     }
 
-    updateProject(project.id, formData)
+    updateProject(project.id, updatedProject)
+    toast({ title: "บันทึกสำเร็จ!", description: "ข้อมูลโครงการถูกอัปเดตแล้ว" })
     router.push(`/project/${project.id}`)
   }
 
-  const handleSectionChange = (index: number, field: keyof ProjectSection, value: string | number) => {
-    const updatedSections = [...(formData.sections || [])]
-    const currentSection = updatedSections[index]
-
-    // Update the field
-    updatedSections[index] = {
-      ...currentSection,
-      [field]: value,
-    }
-
-    // Auto-calculate progress based on budget and spent
-    if (field === "budget" || field === "spent") {
-      const budget = field === "budget" ? Number(value) : currentSection.budget
-      const spent = field === "spent" ? Number(value) : currentSection.spent
-
-      if (budget > 0) {
-        const calculatedProgress = Math.min(Math.round((spent / budget) * 100), 100)
-        updatedSections[index].progress = calculatedProgress
-      } else {
-        updatedSections[index].progress = 0
-      }
-    }
-
-    setFormData({ ...formData, sections: updatedSections })
+  const handleChange = (field: keyof typeof formValues, value: string) => {
+    setFormValues(prev => ({ ...prev, [field]: value }))
   }
 
-  const calculateProgress = (budget: number, spent: number): number => {
-    if (budget <= 0) return 0
-    return Math.min(Math.round((spent / budget) * 100), 100)
-  }
+  function TraderCombobox() {
+    const [query, setQuery] = useState("")
+    const filtered = query === ""
+      ? clients.filter(c => c.status === "active")
+      : clients.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
 
-  const getProgressColor = (progress: number): string => {
-    if (progress >= 100) return "text-red-600"
-    if (progress >= 80) return "text-orange-600"
-    if (progress >= 70) return "text-yellow-600"
-    return "text-green-600"
-  }
-
-  const getProgressBgColor = (progress: number): string => {
-    if (progress > 100) return "bg-red-600"
-    if (progress > 80) return "bg-orange-100"
-    if (progress > 70) return "bg-yellow-100"
-    return "bg-green-100"
-  }
-
-  // Calculate overall project statistics
-  const totalBudget = formData.sections?.reduce((sum, s) => sum + (s.budget || 0), 0) || 0
-  const totalSpent = formData.sections?.reduce((sum, s) => sum + (s.spent || 0), 0) || 0
-  const overallProgress = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push(`/project/${project.id}`)}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-3xl font-bold text-foreground">Edit Project</h1>
-          <p className="text-muted-foreground">Update project information and sections</p>
-        </div>
-      </div>
-
-      {/* Overall Project Stats */}
-      <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
-        <h3 className="text-lg font-semibold mb-4 text-foreground">Overall Project Summary</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Total Budget</p>
-            <p className="text-2xl font-bold text-foreground">฿{totalBudget.toLocaleString()}</p>
+    return (
+      <div className="relative">
+        <Combobox
+          value={formValues.traderId}
+          onChange={(v: string | null) => handleChange("traderId", v ?? "")}
+          nullable
+        >
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Building2 className="h-5 w-5 text-slate-400" />
+            </div>
+            <ComboboxInput
+              className={cn(
+                "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
+                "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all",
+                "placeholder:text-slate-400"
+              )}
+              displayValue={(id: string) => clients.find(c => c.id === id)?.name ?? ""}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="เลือก Trader"
+            />
+            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
+              <ChevronsUpDown className="h-4 w-4 text-slate-400" />
+            </ComboboxButton>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Total Spent</p>
-            <p className="text-2xl font-bold text-foreground">฿{totalSpent.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Remaining</p>
-            <p className={`text-2xl font-bold ${totalBudget - totalSpent < 0 ? 'text-red-600' : 'text-green-600'}`}>
-              ฿{(totalBudget - totalSpent).toLocaleString()}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Overall Progress</p>
-            <p className={`text-2xl font-bold ${getProgressColor(overallProgress)}`}>
-              {overallProgress}%
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Information */}
-        <Card className="p-6">
-          <h2 className="mb-4 text-xl font-semibold text-foreground">Basic Information</h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="name">Project Name *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Enter project name"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="code">Project Code *</Label>
-              <Input
-                id="code"
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                placeholder="e.g., PROJ-001"
-                required
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Enter project description"
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <select
-                id="status"
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value as Project["status"] })}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="planning">Planning</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="on_hold">On Hold</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Start Date *</Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={formData.startDate}
-                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="endDate">End Date *</Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={formData.endDate}
-                onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                required
-              />
-            </div>
-          </div>
-        </Card>
-
-        {/* Project Sections */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-foreground">Project Sections</h2>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <AlertCircle className="h-4 w-4" />
-              <span>Progress auto-calculates from Budget/Spent</span>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {formData.sections?.map((section, index) => {
-              const progress = calculateProgress(section.budget, section.spent)
-              const remaining = section.budget - section.spent
-              const isOverBudget = remaining < 0
-
-              return (
-                <div key={section.id} className={`rounded-lg border-2 p-5 transition-all hover:shadow-md ${getProgressBgColor(progress)} border-gray-200`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-foreground">{section.name}</h3>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-sm font-medium ${getProgressColor(progress)}`}>
-                        Progress: {progress}%
+          <ComboboxOptions className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            {filtered.length === 0 ? (
+              <div className="px-4 py-2 text-slate-500">ไม่พบ Trader</div>
+            ) : (
+              filtered.map((client) => (
+                <ComboboxOption
+                  key={client.id}
+                  value={client.id}
+                  className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
+                >
+                  {({ selected, active }) => (
+                    <>
+                      <span className={cn("block truncate", selected && "font-medium")}>
+                        {client.name}
                       </span>
-                      {isOverBudget && (
-                        <span className="flex items-center gap-1 text-sm font-medium text-red-600">
-                          <AlertCircle className="h-4 w-4" />
-                          Over Budget!
+                      {selected && (
+                        <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
+                          <Check className="h-5 w-5" />
                         </span>
                       )}
-                    </div>
-                  </div>
+                    </>
+                  )}
+                </ComboboxOption>
+              ))
+            )}
+          </ComboboxOptions>
+        </Combobox>
+      </div>
+    )
+  }
 
-                  {/* Progress Bar */}
-                  <div className="mb-4 h-3 w-full overflow-hidden rounded-full bg-gray-200">
-                    <div
-                      className={`h-full transition-all duration-300 ${progress > 100 ? 'bg-red-600' :
-                          progress > 80 ? 'bg-orange-500' :
-                            progress > 70 ? 'bg-yellow-500' :
-                              'bg-green-500'
-                        }`}
-                      style={{ width: `${Math.min(progress, 100)}%` }}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
+      <div className="w-full px-4 py-4 md:py-6 space-y-6">
+
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push(`/project/${project.id}`)}
+                className="hover:bg-slate-100"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Edit (Job)</h1>
+                <p className="text-sm text-slate-600">รหัส: {project.projectNumber}</p>
+              </div>
+            </div>
+            <Button type="submit" form="edit-form" 
+            className="flex-1 sm:flex-none bg-blue-600 hover:bg-green-600">
+              <Save className="h-4 w-4 mr-2" />
+              บันทึก
+            </Button>
+          </div>
+        </div>
+
+        <form id="edit-form" onSubmit={handleSubmit} className="space-y-6">
+
+          {/* ข้อมูลโครงการ */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Project information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+
+              {/* Row 1 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Job Name <span className="text-red-500">*</span></Label>
+                  <Input
+                    value={formValues.jobName}
+                    onChange={e => handleChange("jobName", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Project Code</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      className=""
+                      value={formValues.jobCode}
+                      onChange={e => handleChange("jobCode", e.target.value)}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Job No.</Label>
+                  <Input
+                    className=""
+                    value={formValues.jobNo}
+                    onChange={e => handleChange("jobNo", e.target.value)}
+                  />
+                </div>
+              </div>
 
-                  <div className="grid gap-4 md:grid-cols-4">
-                    <div className="space-y-2">
-                      <Label htmlFor={`budget-${index}`} className="font-semibold">
-                        Budget (฿)
-                      </Label>
-                      <Input
-                        id={`budget-${index}`}
-                        type="number"
-                        value={section.budget}
-                        onChange={(e) => handleSectionChange(index, "budget", Number(e.target.value))}
-                        placeholder="0"
-                        min="0"
-                        className="font-semibold"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor={`spent-${index}`} className="font-semibold">
-                        Spent (฿)
-                      </Label>
-                      <Input
-                        id={`spent-${index}`}
-                        type="number"
-                        value={section.spent}
-                        onChange={(e) => handleSectionChange(index, "spent", Number(e.target.value))}
-                        placeholder="0"
-                        min="0"
-                        className="font-semibold"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="font-semibold">
-                        Remaining (฿)
-                      </Label>
-                      <div className={`flex h-10 items-center rounded-md border px-3 py-2 text-sm font-bold ${isOverBudget ? 'bg-red-50 text-red-600 border-red-300' : 'bg-green-50 text-green-600 border-green-300'
-                        }`}>
-                        {isOverBudget ? '-' : ''}฿{Math.abs(remaining).toLocaleString()}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="font-semibold">
-                        Progress (%)
-                      </Label>
-                      <div className={`flex h-10 items-center justify-center rounded-md border px-3 py-2 text-sm font-bold ${progress >= 100 ? 'bg-red-50 text-red-600 border-red-300' :
-                          progress >= 75 ? 'bg-orange-50 text-orange-600 border-orange-300' :
-                            progress >= 50 ? 'bg-yellow-50 text-yellow-600 border-yellow-300' :
-                              'bg-green-50 text-green-600 border-green-300'
-                        }`}>
-                        {progress}%
-                      </div>
-                    </div>
+              {/* Row 2 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>CC No.</Label>
+                  <Input
+                    value={formValues.ccNo}
+                    onChange={e => handleChange("ccNo", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>WA Number</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      className=""
+                      value={formValues.waNumber}
+                      onChange={e => handleChange("waNumber", e.target.value)}
+                    />
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        </Card>
+                <div className="space-y-2">
+                  <Label>WR/PO/SR/RO Number</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      className=""
+                      value={formValues.wrPoSrRoNumber}
+                      onChange={e => handleChange("wrPoSrRoNumber", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.push(`/project/${project.id}`)}>
-            Cancel
-          </Button>
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-            <Save className="mr-2 h-4 w-4" />
-            Save Changes
-          </Button>
-        </div>
-      </form>
+              {/* Row 3 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                <div className="space-y-2">
+                  <Label>Contact Person</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      className=""
+                      value={formValues.contactPerson}
+                      onChange={e => handleChange("contactPerson", e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Contact Number</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      placeholder=""
+                      value={formValues.contactNumber}
+                      onChange={e => handleChange("contactPerson", e.target.value)}
+                      className=""
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Contact Email</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      type="email"
+                      className=""
+                      value={formValues.contactEmail}
+                      onChange={e => handleChange("contactEmail", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 4 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Trader <span className="text-red-500">*</span></Label>
+                  <TraderCombobox />
+                </div>
+                <div className="space-y-2">
+                  <Label>Expteam Quotation</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      className=""
+                      value={formValues.expteamQuotation}
+                      onChange={e => handleChange("expteamQuotation", e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Estimated PR Cost</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      className=""
+                      value={formValues.estimatedPrCost}
+                      onChange={e => handleChange("estimatedPrCost", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 5 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Start Date <span className="text-red-500">*</span></Label>
+                  <Input
+                    type="date"
+                    value={formValues.startDate}
+                    onChange={e => handleChange("startDate", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>End Date <span className="text-red-500">*</span></Label>
+                  <Input
+                    type="date"
+                    value={formValues.endDate}
+                    onChange={e => handleChange("endDate", e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Duration */}
+              <div className="flex items-center gap-2">
+                <Label>Period</Label>
+                <Badge variant="secondary" className="text-sm">
+                  <Clock className="h-4 w-4 mr-1" />
+                  {calculateDuration()} วัน
+                </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <Label>status</Label>
+                <Select value={formValues.status} onValueChange={v => handleChange("status", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกสถานะ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="in_progress">In progress</SelectItem>
+                    <SelectItem value="completed">Complete</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label>Remark</Label>
+                <Textarea
+                  rows={3}
+                  value={formValues.description}
+                  onChange={e => handleChange("description", e.target.value)}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* งบประมาณ */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                งบประมาณแต่ละส่วน
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {["Material", "Man Power", "OP", "IE", "Supply", "Engineer"].map((name) => {
+                  const key = name.toLowerCase().replace(" ", "") as keyof typeof formValues
+                  return (
+                    <div key={name} className="space-y-2 p-4 bg-slate-50 rounded-lg border">
+                      <Label className="font-medium">{name}</Label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600">฿</span>
+                        <Input
+                          type="number"
+                          className="pl-8 h-10"
+                          value={formValues[key] || ""}
+                          onChange={e => handleChange(key, e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </form>
+      </div>
     </div>
   )
 }

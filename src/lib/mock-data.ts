@@ -115,7 +115,7 @@ export const mockPRs: PurchaseRequisition[] = [
     requestedBy: "สมหญิง รักงาน",
     requestDate: "2025-01-20T08:00:00Z",
     requiredDate: "2025-02-01T08:00:00Z",
-    status: "level2_approved",
+    status: "approved",
     items: [
       {
         id: "PRI003",

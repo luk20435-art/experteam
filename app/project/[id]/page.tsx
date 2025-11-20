@@ -3,28 +3,30 @@
 import { useParams, useRouter } from "next/navigation"
 import { useData } from "@/src/contexts/data-context"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Edit, Trash2, Calendar, DollarSign, ArrowRight, AlertCircle } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { ArrowLeft, Edit, Trash2, Calendar, DollarSign, Phone, Mail, Building2, Users, FileText, Hash, Tag, Clock, TrendingUp, Briefcase } from "lucide-react"
 import { formatCurrency, formatDate } from "@/src/lib/utils"
-import { useState } from "react"
 
 export default function ProjectDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { getProject, deleteProject } = useData()
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const { getProject, moveToTrashProject, clients } = useData()
 
   const project = getProject(params.id as string)
 
+  
+
   if (!project) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-foreground">Project not found</h2>
-          <p className="mt-2 text-muted-foreground">The project you're looking for doesn't exist.</p>
-          <Button onClick={() => router.push("/project")} className="mt-4">
-            Back to Projects
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="text-center space-y-4 bg-white p-8 rounded-2xl shadow-lg">
+          <Briefcase className="h-16 w-16 mx-auto text-slate-400" />
+          <h2 className="text-2xl font-bold text-slate-900">ไม่พบโครงการ</h2>
+          <p className="text-slate-600">โครงการที่คุณกำลังมองหาไม่มีอยู่</p>
+          <Button onClick={() => router.push("/project")} className="bg-blue-600 hover:bg-blue-700">
+            <ArrowLeft className="h-4 w-4 mr-2" /> กลับสู่หน้าโครงการ
           </Button>
         </div>
       </div>
@@ -32,372 +34,389 @@ export default function ProjectDetailPage() {
   }
 
   const handleDelete = () => {
-    if (confirm("Are you sure you want to delete this project?")) {
-      deleteProject(project.id)
+    if (confirm("คุณแน่ใจหรือไม่ที่จะลบโครงการนี้?")) {
+      moveToTrashProject(project.id)
       router.push("/project")
     }
   }
 
-  // Calculate totals
-  const totalBudget = project.sections?.reduce((sum, section) => sum + (section.budget || 0), 0) || 0
-  const totalSpent = project.sections?.reduce((sum, section) => sum + (section.spent || 0), 0) || 0
-  const totalRemaining = totalBudget - totalSpent
-  const overallProgress = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0
+  const duration = project.duration || 0
+  const traderClient = clients.find(c => c.id === project.trader) || null
+  const clientName = traderClient ? traderClient.name : (project.trader || "ไม่ระบุลูกค้า")
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "in_progress":
-        return "bg-green-500 hover:bg-green-600"
-      case "planning":
-        return "bg-blue-500 hover:bg-blue-600"
-      case "on_hold":
-        return "bg-yellow-500 hover:bg-yellow-600"
-      case "completed":
-        return "bg-purple-500 hover:bg-purple-600"
-      default:
-        return "bg-gray-500 hover:bg-gray-600"
+      case "in_progress": return "bg-emerald-100 text-emerald-800 border-emerald-300"
+      case "completed": return "bg-purple-100 text-purple-800 border-purple-300"
+      default: return "bg-slate-100 text-slate-800 border-slate-300"
     }
   }
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "in_progress":
-        return "In Progress"
-      case "planning":
-        return "Planning"
-      case "on_hold":
-        return "On Hold"
-      case "completed":
-        return "Completed"
-      default:
-        return status
+      case "in_progress": return "กำลังดำเนินการ"
+      case "completed": return "เสร็จสิ้น"
+      default: return status
     }
   }
 
-  const getSectionIcon = (name: string) => {
-    const icons: Record<string, string> = {
-      Material: "📦",
-      "Man Power": "👥",
-      OP: "⚙️",
-      IE: "🔧",
-      Supply: "🛠️",
-      Engineer: "👷",
-    }
-    return icons[name] || "📋"
-  }
-
-  const getProgressColor = (progress: number): string => {
-    if (progress > 100) return "text-red-600"
-    if (progress > 80) return "text-orange-600"
-    if (progress > 70) return "text-yellow-600"
-    return "text-green-600"
-  }
-
-  const getProgressBgColor = (progress: number): string => {
-    if (progress > 100) return "bg-red-500"
-    if (progress > 80) return "bg-orange-500"
-    if (progress > 70) return "bg-yellow-500"
-    return "bg-green-500"
-  }
+  const budgetSpent = project.totalSpent || 0
+  const budgetRemaining = project.totalBudget - budgetSpent
+  const budgetUsagePercent = project.totalBudget > 0 ? Math.round((budgetSpent / project.totalBudget) * 100) : 0
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/project")}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">{project.name}</h1>
-            <p className="text-muted-foreground">Project Code: {project.projectNumber}</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => router.push(`/project/${project.id}/edit`)} className="gap-2">
-            <Edit className="h-4 w-4" />
-            Edit Project
-          </Button>
-          <Button variant="destructive" onClick={handleDelete} className="gap-2">
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
+      <div className="w-full px-4 py-4 md:py-6 space-y-6">
 
-      {/* Project Information */}
-      <Card className="p-6 shadow-sm">
-        <h2 className="mb-6 text-xl font-semibold text-foreground">Project Information</h2>
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Description
-            </p>
-            <p className="text-sm leading-relaxed text-foreground">{project.description || "No description"}</p>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Status
-            </p>
-            <div>
-              <Badge className={`${getStatusColor(project.status)} text-white`}>
-                {getStatusLabel(project.status)}
-              </Badge>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Start Date
-            </p>
-            <div className="flex items-center gap-2 text-sm text-foreground">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>{formatDate(project.startDate)}</span>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              End Date
-            </p>
-            <div className="flex items-center gap-2 text-sm text-foreground">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>{formatDate(project.endDate)}</span>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Overview Cards with Circular Progress */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {/* Overall Progress */}
-        <Card className="p-6 bg-gradient-to-br from-primary/5 to-primary/10">
-          <div className="flex flex-col items-center gap-3">
-            <div className="relative w-24 h-24">
-              <svg className="w-24 h-24 transform -rotate-90">
-                <circle
-                  cx="48"
-                  cy="48"
-                  r="40"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  fill="none"
-                  className="text-gray-200"
-                />
-                <circle
-                  cx="48"
-                  cy="48"
-                  r="40"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  fill="none"
-                  strokeDasharray={`${2 * Math.PI * 40}`}
-                  strokeDashoffset={`${2 * Math.PI * 40 * (1 - overallProgress / 100)}`}
-                  className={`transition-all duration-300 ${overallProgress > 100 ? 'text-red-600' :
-                      overallProgress >= 80 ? 'text-orange-500' :
-                        overallProgress > 70 ? 'text-yellow-500' :
-                          'text-green-500'
-                    }`}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className={`text-2xl font-bold ${getProgressColor(overallProgress)}`}>
-                  {overallProgress}%
-                </span>
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/project")}
+                className="hover:bg-slate-100"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{project.name}</h1>
+                  <Badge className={`${getStatusColor(project.status)} font-medium px-3 py-1 border`}>
+                    {getStatusLabel(project.status)}
+                  </Badge>
+                </div>
+                <p className="text-sm text-slate-600">
+                  Project: {project.projectNumber} • Client: {clientName}
+                </p>
               </div>
             </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-muted-foreground">Overall Progress</p>
-            </div>
-          </div>
-        </Card>
-
-        {/* Total Budget */}
-        <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900">
-          <div className="flex flex-col items-center gap-3">
-            <div className="rounded-full bg-blue-500/20 p-4">
-              <DollarSign className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-1">Total Budget</p>
-              <p className="text-xl font-bold text-foreground">{formatCurrency(totalBudget)}</p>
-            </div>
-          </div>
-        </Card>
-
-        {/* Total Spent */}
-        <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900">
-          <div className="flex flex-col items-center gap-3">
-            <div className="rounded-full bg-orange-500/20 p-4">
-              <DollarSign className="h-8 w-8 text-orange-600 dark:text-orange-400" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-1">Total Spent</p>
-              <p className="text-xl font-bold text-foreground">{formatCurrency(totalSpent)}</p>
-              <p className="text-xs text-muted-foreground">
-                {totalBudget > 0 ? `${((totalSpent / totalBudget) * 100).toFixed(1)}% of budget` : "0%"}
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        {/* Remaining */}
-        <Card className={`p-6 bg-gradient-to-br ${totalRemaining >= 0
-            ? 'from-green-50 to-green-100 dark:from-green-950 dark:to-green-900'
-            : 'from-red-50 to-red-100 dark:from-red-950 dark:to-red-900'
-          }`}>
-          <div className="flex flex-col items-center gap-3">
-            <div className={`rounded-full p-4 ${totalRemaining >= 0
-                ? 'bg-green-500/20'
-                : 'bg-red-500/20'
-              }`}>
-              {totalRemaining >= 0 ? (
-                <DollarSign className="h-8 w-8 text-green-600 dark:text-green-400" />
-              ) : (
-                <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
-              )}
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-1">
-                {totalRemaining >= 0 ? "Remaining" : "Over Budget"}
-              </p>
-              <p className={`text-xl font-bold ${totalRemaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {totalRemaining >= 0 ? '' : '-'}{formatCurrency(Math.abs(totalRemaining))}
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Project Sections */}
-      <div>
-        <h2 className="mb-4 text-xl font-semibold text-foreground">Project Sections</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {project.sections?.map((section) => {
-            const remaining = section.budget - section.spent
-            const progress = section.budget > 0 ? Math.round((section.spent / section.budget) * 100) : 0
-            const isOverBudget = remaining < 0
-
-            return (
-              <Card
-                key={section.id}
-                className="group relative overflow-hidden p-6 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] cursor-pointer border-2 hover:border-primary"
-                onClick={() => router.push(`/project/${project.id}/sections/${section.id}`)}
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                onClick={() => router.push(`/project/${project.id}/edit`)}
+                className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700"
               >
-                {/* Background Gradient Effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <Edit className="h-4 w-4 mr-2" /> แก้ไข
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleDelete}
+                className="flex-1 sm:flex-none text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> ลบ
+              </Button>
+            </div>
+          </div>
+        </div>
 
-                <div className="relative z-10">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-primary/10 p-2 group-hover:bg-primary/20 transition-colors">
-                        <span className="text-2xl">{getSectionIcon(section.name)}</span>
-                      </div>
-                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {section.name}
-                      </h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={`group-hover:border-primary ${getProgressColor(progress)}`}>
-                        {progress}%
-                      </Badge>
-                      {isOverBudget && (
-                        <AlertCircle className="h-4 w-4 text-red-500" />
-                      )}
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* Left Column */}
+          <div className="lg:col-span-2 space-y-6">
+
+            {/* ข้อมูลหลัก */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Hash className="h-5 w-5" />
+                  ข้อมูลหลัก
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Job No.</p>
+                    <p className="font-bold text-blue-700">{project.jobNo || "-"}</p>
+                  </div>
+                  <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Project Code</p>
+                    <p className="font-bold text-purple-700">{project.code || "-"}</p>
+                  </div>
+                  <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">C.C No.</p>
+                    <p className="font-bold text-emerald-700">{project.ccNo || "-"}</p>
+                  </div>
+                  <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">WR/PO/SR/RO</p>
+                    <p className="font-bold text-orange-700">{project.wrPoSrRoNumber || "-"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ข้อมูลลูกค้า */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  ข้อมูลลูกค้า (Trader)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white rounded-lg border">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Trader Name</p>
+                    <p className="font-bold text-slate-800">{clientName}</p>
+                  </div>
+                  <div className="p-4 bg-white rounded-lg border">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Contact Person</p>
+                    <p className="font-bold text-slate-800">{project.contactPerson || "-"}</p>
+                  </div>
+                  <div className="p-4 bg-white rounded-lg border">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1 flex items-center gap-2">
+                      <Phone className="h-4 w-4" /> WhatsApp
+                    </p>
+                    <p className="font-bold text-slate-800">{project.waNumber || "-"}</p>
+                  </div>
+                  <div className="p-4 bg-white rounded-lg border">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1 flex items-center gap-2">
+                      <Mail className="h-4 w-4" /> Email
+                    </p>
+                    <p className="font-bold text-slate-800 truncate">{project.contactEmail || "-"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ตารางเวลา */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  ตารางเวลา
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-slate-700">วันเริ่มต้น</span>
+                      <span className="font-bold text-blue-700">{formatDate(project.startDate)}</span>
                     </div>
                   </div>
-
-                  <div className="space-y-4">
-                    {/* Circular Progress */}
-                    <div className="flex items-center justify-center py-2">
-                      <div className="relative w-32 h-32">
-                        <svg className="w-32 h-32 transform -rotate-90">
-                          <circle
-                            cx="64"
-                            cy="64"
-                            r="56"
-                            stroke="currentColor"
-                            strokeWidth="8"
-                            fill="none"
-                            className="text-gray-200"
-                          />
-                          <circle
-                            cx="64"
-                            cy="64"
-                            r="56"
-                            stroke="currentColor"
-                            strokeWidth="8"
-                            fill="none"
-                            strokeDasharray={`${2 * Math.PI * 56}`}
-                            strokeDashoffset={`${2 * Math.PI * 56 * (1 - Math.min(progress, 100) / 100)}`}
-                            className={`transition-all duration-500 ${getProgressBgColor(progress).replace('bg-', 'text-')}`}
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className={`text-2xl font-bold ${getProgressColor(progress)}`}>
-                            {progress}%
-                          </span>
-                          <span className="text-xs text-muted-foreground">Complete</span>
-                        </div>
-                      </div>
+                  <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-slate-700">วันสิ้นสุด</span>
+                      <span className="font-bold text-emerald-700">{formatDate(project.endDate)}</span>
                     </div>
-
-                    {/* Budget Info */}
-                    <div className="space-y-2 rounded-lg bg-muted/50 p-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Budget</span>
-                        <span className="font-semibold text-foreground">{formatCurrency(section.budget)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Spent</span>
-                        <span className={`font-semibold ${progress >= 100 ? 'text-red-500' : 'text-orange-500'}`}>
-                          {formatCurrency(section.spent)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Remaining</span>
-                        <span className={`font-semibold ${isOverBudget ? 'text-red-500' : 'text-green-500'}`}>
-                          {isOverBudget ? '-' : ''}{formatCurrency(Math.abs(remaining))}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Budget Usage Bar */}
-                    <div>
-                      <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Budget Usage</span>
-                        <span className={`font-semibold ${getProgressColor(progress)}`}>
-                          {progress}%
-                        </span>
-                      </div>
-                      <div className="relative h-2 rounded-full bg-gray-200 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${getProgressBgColor(progress)}`}
-                          style={{ width: `${Math.min(progress, 100)}%` }}
-                        />
-                      </div>
-                      {isOverBudget && (
-                        <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" />
-                          Over budget by {formatCurrency(Math.abs(remaining))}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* View Details Button */}
-                    <div className="flex items-center justify-end gap-1 text-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="font-medium">View Details</span>
-                      <ArrowRight className="h-4 w-4" />
+                  </div>
+                  <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-slate-700">ระยะเวลา</span>
+                      <Badge className="bg-purple-600 text-white">{duration} วัน</Badge>
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* งบประมาณ */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  งบประมาณ
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white rounded-lg border">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Quotation</p>
+                    <p className="font-bold text-slate-800">{project.expteamQuotation || "-"}</p>
+                  </div>
+                  <div className="p-4 bg-white rounded-lg border">
+                    <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Est. PR Cost</p>
+                    <p className="font-bold text-slate-800">{project.estimatedPrCost || "-"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* รายละเอียด */}
+            {project.description && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    รายละเอียด
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-slate-700 bg-slate-50 p-4 rounded-lg border">
+                    {project.description}
+                  </p>
+                </CardContent>
               </Card>
-            )
-          })}
+            )}
+          </div>
+
+          {/* Right Column */}
+          <div className="space-y-6">
+
+            {/* สรุปงบประมาณ */}
+            <Card className="sticky top-6">
+              <CardHeader className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+                <CardTitle className="text-lg">สรุปงบประมาณ</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6 space-y-4">
+                <div>
+                  <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">งบประมาณรวม PR Cost</p>
+                  <p className="text-2xl font-bold text-slate-900">{formatCurrency(project.totalBudget)}</p>
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-slate-700">ใช้ไปแล้ว</span>
+                    <span className="text-sm font-bold text-orange-600">{formatCurrency(budgetSpent)}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div
+                      className="bg-gradient-to-r from-orange-500 to-amber-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(budgetUsagePercent, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 text-right">{budgetUsagePercent}%</p>
+                </div>
+                <Separator />
+                <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                  <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">คงเหลือ</p>
+                  <p className={`text-xl font-bold ${budgetRemaining >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {formatCurrency(Math.abs(budgetRemaining))}
+                  </p>
+                  {budgetRemaining < 0 && <p className="text-xs text-red-600 mt-1">เกินงบประมาณ</p>}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ความคืบหน้า */}
+            <Card>
+              <CardHeader className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  ความคืบหน้า
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center">
+                  <div className="relative w-32 h-32">
+                    <svg className="w-32 h-32 -rotate-90" viewBox="0 0 128 128">
+                      <circle cx="64" cy="64" r="56" stroke="#e5e7eb" strokeWidth="12" fill="none" />
+                      <circle
+                        cx="64" cy="64" r="56"
+                        stroke="url(#grad)"
+                        strokeWidth="12"
+                        fill="none"
+                        strokeDasharray={`${2 * Math.PI * 56}`}
+                        strokeDashoffset={`${2 * Math.PI * 56 * (1 - (project.overallProgress || 0) / 100)}`}
+                        strokeLinecap="round"
+                        className="transition-all duration-500"
+                      />
+                      <defs>
+                        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#a855f7" />
+                          <stop offset="100%" stopColor="#ec4899" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-2xl font-bold text-purple-700">
+                        {project.overallProgress || 0}%
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-slate-600 font-medium">ความคืบหน้าโครงการ</p>
+                </div>
+              </CardContent>
+            </Card>
+            {/* ปุ่มไปยังหน้าต่าง ๆ ของโครงการ */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  เอกสารของโครงการ
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-4">
+                <Button
+                  onClick={() => router.push(`/project/${project.id}/pr`)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  PR
+                </Button>
+                <Button
+                  onClick={() => router.push(`/project/${project.id}/po`)}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  PO
+                </Button>
+                <Button
+                  onClick={() => router.push(`/project/${project.id}/wr`)}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  WR
+                </Button>
+                <Button
+                  onClick={() => router.push(`/project/${project.id}/wo`)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  WO
+                </Button>
+              </CardContent>
+            </Card>
+
+          </div>
+
+
         </div>
+
+        {/* ส่วนงาน */}
+        {project.sections && project.sections.length > 0 && (
+          <Card>
+            <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white">
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                ส่วนงานของโครงการ
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {project.sections.map((section) => {
+                  const progress = section.budget > 0 ? Math.round((section.spent / section.budget) * 100) : 0
+                  return (
+                    <div
+                      key={section.id}
+                      onClick={() => router.push(`/project/${project.id}/sections/${section.id}`)}
+                      className="p-4 bg-slate-50 rounded-lg border-2 border-slate-200 hover:border-indigo-500 hover:shadow-md cursor-pointer transition-all"
+                    >
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-bold text-slate-800">{section.name}</h4>
+                        <Badge className="bg-indigo-600 text-white">{progress}%</Badge>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">งบ</span>
+                          <span className="font-bold">{formatCurrency(section.budget)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">ใช้แล้ว</span>
+                          <span className="font-bold text-orange-600">{formatCurrency(section.spent)}</span>
+                        </div>
+                        <div className="w-full bg-slate-300 rounded-full h-1.5 mt-2">
+                          <div
+                            className="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full"
+                            style={{ width: `${Math.min(progress, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

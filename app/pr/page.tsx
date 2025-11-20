@@ -8,45 +8,35 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { Plus, Search, Eye, Edit, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react"
+import { Plus, Search, Eye, Edit, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight, CheckCircle } from "lucide-react"
 import { useData } from "@/src/contexts/data-context"
 import { formatCurrency, formatDate, getStatusColor, getStatusLabel } from "@/src/lib/utils"
 import { exportPRToCSV } from "@/src/lib/export-utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { format, startOfDay, endOfDay } from "date-fns"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 
 export default function PRListPage() {
-  const { prs, moveToTrashPR } = useData() // เปลี่ยนจาก deletePR → moveToTrashPR
+  const { prs, moveToTrashPR, approvePR } = useData()
   const [searchTerm, setSearchTerm] = useState("")
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
-
-  // ตัวกรองวันที่ + เรียงลำดับ
-  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined })
   const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest")
 
-  // กรองเฉพาะที่ยังไม่ถูกลบ
+  // Modal อนุมัติ
+  const [approveModalOpen, setApproveModalOpen] = useState(false)
+  const [selectedPRForApprove, setSelectedPRForApprove] = useState<any>(null)
+
   const activePRs = prs.filter(pr => !pr.deleted)
 
-  // กรอง + เรียงลำดับ
   const filteredAndSortedPRs = useMemo(() => {
     let filtered = activePRs.filter((pr) => {
       const matchesSearch =
         pr.prNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pr.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pr.department.toLowerCase().includes(searchTerm.toLowerCase())
+        (pr.projectName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (pr.department || "").toLowerCase().includes(searchTerm.toLowerCase())
 
-      let matchesDate = true
-      if (dateRange.from && dateRange.to) {
-        const prDate = new Date(pr.requestDate)
-        const from = startOfDay(dateRange.from)
-        const to = endOfDay(dateRange.to)
-        matchesDate = prDate >= from && prDate <= to
-      }
-
-      return matchesSearch && matchesDate
+      return matchesSearch
     })
 
     filtered.sort((a, b) => {
@@ -56,24 +46,34 @@ export default function PRListPage() {
     })
 
     return filtered
-  }, [activePRs, searchTerm, dateRange, sortOrder])
+  }, [activePRs, searchTerm, sortOrder])
 
-  // Pagination
   const totalItems = filteredAndSortedPRs.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = Math.min(startIndex + pageSize, totalItems)
   const paginatedPRs = filteredAndSortedPRs.slice(startIndex, endIndex)
 
-  // รีเซ็ตหน้า
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, dateRange, sortOrder, pageSize])
+  }, [searchTerm, sortOrder, pageSize])
 
-  // แก้ handleDelete ให้ใช้ moveToTrashPR
   const handleDelete = (id: string, prNumber: string) => {
-    if (confirm(`คุณต้องการลบ PR "${prNumber}" หรือไม่?\n\nข้อมูลจะถูกย้ายไป "ถังขยะ" และสามารถกู้คืนได้`)) {
+    if (confirm(`คุณต้องการลบ PR "${prNumber}" หรือไม่?\n\nข้อมูลจะถูกย้ายไป "ถังขยะ"`)) {
       moveToTrashPR(id)
+    }
+  }
+
+  const handleApprove = (pr: any) => {
+    setSelectedPRForApprove(pr)
+    setApproveModalOpen(true)
+  }
+
+  const confirmApprove = () => {
+    if (selectedPRForApprove) {
+      approvePR(selectedPRForApprove.id)
+      setApproveModalOpen(false)
+      setSelectedPRForApprove(null)
     }
   }
 
@@ -90,21 +90,19 @@ export default function PRListPage() {
           <p className="text-sm md:text-base text-muted-foreground">จัดการใบขอซื้อทั้งหมด</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          {/* Export CSV */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => exportPRToCSV(filteredAndSortedPRs)}
-            className="flex-1 sm:flex-none border-success text-success hover:bg-success hover:text-white transition-colors"
+            className="h-9.5 flex-1 md:flex-none bg-sky-400 hover:bg-blue-700 text-white"
           >
             <FileSpreadsheet className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline cursor-pointer">Export CSV</span>
+            <span className="hidden sm:inline">Export CSV</span>
             <span className="sm:hidden">CSV</span>
           </Button>
 
-          {/* สร้าง PR ใหม่ */}
           <Link href="/pr/new" className="flex-1 sm:flex-none">
-            <Button className="w-full bg-primary hover:bg-primary/90 text-white cursor-pointer">
+            <Button className="w-full sm:w-auto bg-blue-700 hover:bg-green-600">
               <Plus className="mr-2 h-4 w-4" />
               สร้าง PR ใหม่
             </Button>
@@ -116,9 +114,7 @@ export default function PRListPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-            {/* ซ้าย: ค้นหา + วันที่ + เรียงลำดับ */}
             <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
-              {/* ค้นหา */}
               <div className="relative flex-1 min-w-0">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -128,8 +124,6 @@ export default function PRListPage() {
                   className="pl-10 w-full"
                 />
               </div>
-
-              {/* เรียงลำดับ */}
               <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "latest" | "oldest")}>
                 <SelectTrigger className="w-full sm:w-48">
                   <SelectValue />
@@ -140,21 +134,17 @@ export default function PRListPage() {
                 </SelectContent>
               </Select>
             </div>
-
-            {/* ขวา: แสดงจำนวน */}
-            <div className="flex gap-2 w-full sm:w-auto">
-              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
-                <SelectTrigger className="w-full sm:w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5">5 รายการ</SelectItem>
-                  <SelectItem value="10">10 รายการ</SelectItem>
-                  <SelectItem value="20">20 รายการ</SelectItem>
-                  <SelectItem value="50">50 รายการ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+              <SelectTrigger className="w-full sm:w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5 รายการ</SelectItem>
+                <SelectItem value="10">10 รายการ</SelectItem>
+                <SelectItem value="20">20 รายการ</SelectItem>
+                <SelectItem value="50">50 รายการ</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -166,80 +156,106 @@ export default function PRListPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto -mx-4 sm:mx-0">
-            <div className="inline-block min-w-full align-middle">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap">เลขที่ PR</TableHead>
-                    <TableHead className="whitespace-nowrap">หัวข้อ</TableHead>
-                    <TableHead className="whitespace-nowrap hidden md:table-cell">แผนก</TableHead>
-                    <TableHead className="whitespace-nowrap hidden lg:table-cell">ผู้ขอ</TableHead>
-                    <TableHead className="whitespace-nowrap hidden sm:table-cell">วันที่ขอ</TableHead>
-                    <TableHead className="whitespace-nowrap">สถานะ</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">จำนวนเงิน</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">จัดการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedPRs.map((pr) => (
-                    <TableRow key={pr.id}>
-                      <TableCell className="font-medium whitespace-nowrap">{pr.prNumber}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{pr.title}</TableCell>
-                      <TableCell className="hidden md:table-cell">{pr.department}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{pr.requestedBy}</TableCell>
-                      <TableCell className="hidden sm:table-cell whitespace-nowrap">
-                        {formatDate(pr.requestDate)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(pr.status)}>{getStatusLabel(pr.status)}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(pr.totalAmount)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Link href={`/pr/${pr.id}`}>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 cursor-pointer">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                </Link>
-                              </TooltipTrigger>
-                              <TooltipContent>ดูรายละเอียด</TooltipContent>
-                            </Tooltip>
-
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Link href={`/pr/${pr.id}/edit`}>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-600 cursor-pointer">
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                </Link>
-                              </TooltipTrigger>
-                              <TooltipContent>แก้ไข</TooltipContent>
-                            </Tooltip>
-
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>เลขที่ PR</TableHead>
+                  <TableHead>โครงการ</TableHead>
+                  <TableHead className="hidden md:table-cell">แผนก</TableHead>
+                  <TableHead className="hidden lg:table-cell">ผู้ขอ</TableHead>
+                  <TableHead className="hidden sm:table-cell">วันที่ขอ</TableHead>
+                  <TableHead>สถานะ</TableHead>
+                  <TableHead className="text-right">จำนวนเงิน</TableHead>
+                  <TableHead className="text-right">การอนุมัติ</TableHead>
+                  <TableHead className="text-right">จัดการ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedPRs.map((pr) => (
+                  <TableRow key={pr.id}>
+                    <TableCell className="font-medium">{pr.prNumber}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{pr.projectName || "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{pr.department || "-"}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{pr.requestedBy || "-"}</TableCell>
+                    <TableCell className="hidden sm:table-cell whitespace-nowrap">
+                      {formatDate(pr.requestDate)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={getStatusColor(pr.status)}>
+                        {pr.status === "อนุมัติแล้ว" && (
+                          <CheckCircle className="w-3.5 h-3.5 mr-1 inline " />
+                        )}
+                        {getStatusLabel(pr.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{formatCurrency(pr.totalAmount)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <TooltipProvider>
+                          {/* ปุ่มอนุมัติ */}
+                          {pr.status === "รออนุมัติ" && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-red-600 hover:text-red-700 cursor-pointer"
-                                  onClick={() => handleDelete(pr.id, pr.prNumber)} // ส่ง prNumber ไปด้วย
+                                  className="h-8 w-8 text-green-600 hover:text-green-700"
+                                  onClick={() => handleApprove(pr)}
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <CheckCircle className="h-4 w-4" />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>ลบ</TooltipContent>
+                              <TooltipContent>อนุมัติ PR</TooltipContent>
                             </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                          )}
+                        </TooltipProvider>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Link href={`/pr/${pr.id}`}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                            </TooltipTrigger>
+                            <TooltipContent>ดูรายละเอียด</TooltipContent>
+                          </Tooltip>
+
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Link href={`/pr/${pr.id}/edit`}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-600">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                            </TooltipTrigger>
+                            <TooltipContent>แก้ไข</TooltipContent>
+                          </Tooltip>
+
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-600 hover:text-red-700"
+                                onClick={() => handleDelete(pr.id, pr.prNumber)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>ลบ</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
 
           {/* Pagination */}
@@ -248,68 +264,61 @@ export default function PRListPage() {
               <div className="text-sm text-muted-foreground">
                 แสดง {startIndex + 1}-{endIndex} จาก {totalItems} รายการ
               </div>
-
               <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage === 1}
-                >
+                <Button variant="outline" size="icon" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-
-                <div className="flex gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const pageNum = i + 1
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={currentPage === pageNum ? "default" : "outline"}
-                        size="sm"
-                        className="w-9"
-                        onClick={() => goToPage(pageNum)}
-                      >
-                        {pageNum}
-                      </Button>
-                    )
-                  })}
-                  {totalPages > 5 && (
-                    <>
-                      <span className="px-2 text-sm text-muted-foreground">...</span>
-                      <Button
-                        variant={currentPage === totalPages ? "default" : "outline"}
-                        size="sm"
-                        className="w-9"
-                        onClick={() => goToPage(totalPages)}
-                      >
-                        {totalPages}
-                      </Button>
-                    </>
-                  )}
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                >
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const pageNum = i + 1
+                  return (
+                    <Button key={pageNum} variant={currentPage === pageNum ? "default" : "outline"} size="sm" className="w-9" onClick={() => goToPage(pageNum)}>
+                      {pageNum}
+                    </Button>
+                  )
+                })}
+                {totalPages > 5 && (
+                  <>
+                    <span className="px-2 text-sm text-muted-foreground">...</span>
+                    <Button variant={currentPage === totalPages ? "default" : "outline"} size="sm" className="w-9" onClick={() => goToPage(totalPages)}>
+                      {totalPages}
+                    </Button>
+                  </>
+                )}
+                <Button variant="outline" size="icon" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
           )}
-
-          {filteredAndSortedPRs.length === 0 && (
-            <div className="text-center py-12">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium text-muted-foreground">ไม่พบข้อมูล PR</p>
-              <p className="text-sm mt-1">ลองเปลี่ยนตัวกรอง</p>
-            </div>
-          )}
         </CardContent>
       </Card>
+
+      {/* Modal อนุมัติ */}
+      <Dialog open={approveModalOpen} onOpenChange={setApproveModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>ยืนยันการอนุมัติ PR</DialogTitle>
+            <DialogDescription>
+              คุณต้องการอนุมัติใบขอซื้อนี้หรือไม่?
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPRForApprove && (
+            <div className="space-y-3 py-4">
+              <div><Label>เลขที่ PR:</Label> <span className="font-medium">{selectedPRForApprove.prNumber}</span></div>
+              <div><Label>โครงการ:</Label> <span className="font-medium">{selectedPRForApprove.projectName}</span></div>
+              <div><Label>จำนวนเงิน:</Label> <span className="font-medium text-green-600">{formatCurrency(selectedPRForApprove.totalAmount)}</span></div>
+              <div><Label>ผู้ขอ:</Label> <span className="font-medium">{selectedPRForApprove.requestedBy}</span></div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveModalOpen(false)}>ยกเลิก</Button>
+            <Button className="bg-green-600 hover:bg-green-700" onClick={confirmApprove}>
+              <CheckCircle className="mr-2 h-4 w-4" />
+              อนุมัติ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

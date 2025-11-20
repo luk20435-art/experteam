@@ -12,23 +12,40 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { useData } from "@/src/contexts/data-context"
 import { formatCurrency } from "@/src/lib/utils"
-import { Plus, Search, Eye, Edit, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, Eye, Edit, Trash2, FileSpreadsheet, ChevronLeft, ChevronRight, CheckCircle } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { format, startOfDay, endOfDay } from "date-fns"
 
 export default function POListPage() {
-  const { pos, moveToTrashPO, suppliers } = useData() // เปลี่ยนจาก deletePO → moveToTrashPO
+  const { pos, moveToTrashPO, updatePO, suppliers } = useData()
 
   const [searchTerm, setSearchTerm] = useState("")
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState<"all" | "ร่าง" | "กำลังดำเนินการ" | "สำเร็จ" | "รออนุมัติ" | "อนุมัติแล้ว">("all")
 
-  // ตัวกรองวันที่ + เรียงลำดับ
   const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined })
   const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest")
 
-  // กรองเฉพาะ PO ที่ยังไม่ถูกลบ
   const activePOs = pos.filter(po => !po.deleted)
+
+  // สถานะสี + Badge
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "ร่าง":
+        return <Badge className="bg-slate-100 text-slate-700 border-slate-300">ร่าง</Badge>
+      case "รออนุมัติ":
+        return <Badge className="bg-amber-100 text-amber-800 border-amber-300">รออนุมัติ</Badge>
+      case "กำลังดำเนินการ":
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-300">กำลังดำเนินการ</Badge>
+      case "สำเร็จ":
+        return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">สำเร็จ</Badge>
+      case "อนุมัติแล้ว":
+        return <Badge className="bg-green-100 text-green-800 border-green-300">อนุมัติแล้ว</Badge>
+      default:
+        return <Badge variant="secondary">{status}</Badge>
+    }
+  }
 
   // กรอง + เรียงลำดับ
   const filteredAndSortedPOs = useMemo(() => {
@@ -37,27 +54,28 @@ export default function POListPage() {
         const supplier = suppliers.find((s) => s.id === po.supplierId)
 
         const searchLower = searchTerm.toLowerCase()
-
         const matchesSearch =
           String(po.poNumber).toLowerCase().includes(searchLower) ||
           (supplier?.name || "").toLowerCase().includes(searchLower) ||
           (po.description || "").toLowerCase().includes(searchLower)
 
+        const matchesStatus = statusFilter === "all" || po.status === statusFilter
+
         if (dateRange.from && dateRange.to) {
           const poDate = new Date(po.createdAt)
           const from = startOfDay(dateRange.from)
           const to = endOfDay(dateRange.to)
-          return matchesSearch && poDate >= from && poDate <= to
+          return matchesSearch && matchesStatus && poDate >= from && poDate <= to
         }
 
-        return matchesSearch
+        return matchesSearch && matchesStatus
       })
       .sort((a, b) => {
         const dateA = new Date(a.createdAt).getTime()
         const dateB = new Date(b.createdAt).getTime()
         return sortOrder === "latest" ? dateB - dateA : dateA - dateB
       })
-  }, [activePOs, suppliers, searchTerm, dateRange.from, dateRange.to, sortOrder])
+  }, [activePOs, suppliers, searchTerm, dateRange.from, dateRange.to, sortOrder, statusFilter])
 
   // Pagination
   const totalItems = filteredAndSortedPOs.length
@@ -66,28 +84,43 @@ export default function POListPage() {
   const endIndex = Math.min(startIndex + pageSize, totalItems)
   const paginatedPOs = filteredAndSortedPOs.slice(startIndex, endIndex)
 
-  // รีเซ็ตหน้า
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, dateRange, sortOrder, pageSize])
+  }, [searchTerm, dateRange, sortOrder, pageSize, statusFilter])
 
-  // แก้ handleDelete ให้ใช้ moveToTrashPO
+  // ลบ PO
   const handleDelete = (id: string, poNumber: string) => {
     if (confirm(`คุณต้องการลบ PO "${poNumber}" หรือไม่?\n\nข้อมูลจะถูกย้ายไป "ถังขยะ" และสามารถกู้คืนได้`)) {
       moveToTrashPO(id)
     }
   }
 
+  // อนุมัติ PO
+  const handleApprove = (id: string, poNumber: string) => {
+    if (confirm(`คุณต้องการอนุมัติ PO "${poNumber}" หรือไม่?\n\nสถานะจะเปลี่ยนเป็น "อนุมัติแล้ว"`)) {
+      const po = pos.find(p => p.id === id)
+      if (po) {
+        updatePO(id, {
+          ...po,
+          status: "อนุมัติแล้ว",
+          updatedAt: new Date().toISOString(),
+        })
+      }
+    }
+  }
+
+  // Export CSV
   const exportToCSV = () => {
-    const headers = ["PO Number", "PR Number", "Supplier", "Description", "Total Amount", "Created Date"]
+    const headers = ["PO Number", "PR Number", "Supplier", "Description", "Status", "Total Amount", "Created Date"]
     const rows = filteredAndSortedPOs.map((po) => {
       const supplier = suppliers.find((s) => s.id === po.supplierId)
       const dateStr = format(new Date(po.createdAt), "dd/MM/yyyy")
       return [
         po.poNumber,
-        po.prNumber,
-        supplier?.name || "",
-        po.description,
+        po.prNumber || "",
+        supplier?.name || po.supplierName || "",
+        po.description || "",
+        po.status || "ไม่ระบุ",
         po.totalAmount.toString(),
         `="'${dateStr}'"`,
       ]
@@ -118,17 +151,17 @@ export default function POListPage() {
             variant="outline"
             size="sm"
             onClick={exportToCSV}
-            className="flex-1 sm:flex-none border-success text-success hover:bg-success hover:text-white transition-colors"
+            className="h-9.5 flex-1 md:flex-none bg-sky-400 hover:bg-sky-400 text-white"
           >
-            <FileSpreadsheet className="mr-2 h-4 w-4 " />
-            <span className="hidden sm:inline cursor-pointer">Export CSV</span>
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            <span className="hidden sm:inline">Export CSV</span>
             <span className="sm:hidden">CSV</span>
           </Button>
 
           <Link href="/po/new" className="flex-1 sm:flex-none">
-            <Button className="w-full bg-primary hover:bg-primary/90 text-white cursor-pointer">
+            <Button className="w-full sm:w-auto bg-blue-700 hover:bg-green-600">
               <Plus className="mr-2 h-4 w-4" />
-              สร้าง PO ใหม่
+              Create New PO
             </Button>
           </Link>
         </div>
@@ -149,6 +182,20 @@ export default function POListPage() {
                 />
               </div>
 
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="ทุกสถานะ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกสถานะ</SelectItem>
+                  <SelectItem value="ร่าง">ร่าง</SelectItem>
+                  <SelectItem value="รออนุมัติ">รออนุมัติ</SelectItem>
+                  <SelectItem value="กำลังดำเนินการ">กำลังดำเนินการ</SelectItem>
+                  <SelectItem value="สำเร็จ">สำเร็จ</SelectItem>
+                  <SelectItem value="อนุมัติแล้ว">อนุมัติแล้ว</SelectItem>
+                </SelectContent>
+              </Select>
+
               <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "latest" | "oldest")}>
                 <SelectTrigger className="w-full sm:w-48">
                   <SelectValue />
@@ -161,6 +208,17 @@ export default function POListPage() {
             </div>
 
             <div className="flex gap-2 w-full sm:w-auto">
+              <Popover>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={{ from: dateRange.from, to: dateRange.to }}
+                    onSelect={(range: any) => setDateRange({ from: range?.from, to: range?.to })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
               <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
                 <SelectTrigger className="w-full sm:w-32">
                   <SelectValue />
@@ -192,15 +250,17 @@ export default function POListPage() {
                     <TableHead className="whitespace-nowrap">เลข PR</TableHead>
                     <TableHead className="whitespace-nowrap hidden lg:table-cell">Supplier</TableHead>
                     <TableHead className="whitespace-nowrap hidden md:table-cell">รายละเอียด</TableHead>
+                    <TableHead className="whitespace-nowrap">สถานะ</TableHead>
                     <TableHead className="text-right whitespace-nowrap">จำนวนเงิน</TableHead>
                     <TableHead className="whitespace-nowrap hidden sm:table-cell">วันที่สร้าง</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">การอนุมัติ</TableHead>
                     <TableHead className="text-right whitespace-nowrap">จัดการ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedPOs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
                         <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
                         <p className="text-lg font-medium">ไม่พบข้อมูล PO</p>
                         <p className="text-sm mt-1">ลองเปลี่ยนตัวกรอง</p>
@@ -209,16 +269,32 @@ export default function POListPage() {
                   ) : (
                     paginatedPOs.map((po) => {
                       const supplier = suppliers.find((s) => s.id === po.supplierId)
+                      const canApprove = po.status === "รออนุมัติ"
                       return (
-                        <TableRow key={po.id}>
-                          <TableCell className="font-medium whitespace-nowrap">{po.poNumber}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <Link href={`/pr/${po.prId}`} className="text-primary hover:underline">
-                              {po.prNumber}
+                        <TableRow key={po.id} className="hover:bg-slate-50 transition-colors">
+                          <TableCell className="font-medium whitespace-nowrap">
+                            <Link href={`/po/${po.id}`} className="text-primary hover:underline">
+                              {po.poNumber}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell">{supplier?.name || "-"}</TableCell>
-                          <TableCell className="hidden md:table-cell max-w-xs truncate">{po.description}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {po.prNumber ? (
+                              <Link href={`/pr/${po.prId}`} className="text-primary hover:underline">
+                                {po.prNumber}
+                              </Link>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {supplier?.name || po.supplierName || "-"}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell max-w-xs truncate">
+                            {po.description || "-"}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {getStatusBadge(po.status || "ไม่ระบุ")}
+                          </TableCell>
                           <TableCell className="text-right font-medium whitespace-nowrap">
                             {formatCurrency(po.totalAmount)}
                           </TableCell>
@@ -232,10 +308,34 @@ export default function POListPage() {
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
                               <TooltipProvider>
+
+                                {/* อนุมัติ (เฉพาะรออนุมัติ) */}
+                                {canApprove && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-green-600 hover:text-green-700"
+                                        onClick={() => handleApprove(po.id, po.poNumber)}
+                                      >
+                                        <CheckCircle className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>อนุมัติ PO</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </TooltipProvider>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <TooltipProvider>
+                                {/* ดูรายละเอียด */}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Link href={`/po/${po.id}`}>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 cursor-pointer">
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600">
                                         <Eye className="h-4 w-4" />
                                       </Button>
                                     </Link>
@@ -243,10 +343,11 @@ export default function POListPage() {
                                   <TooltipContent>ดูรายละเอียด</TooltipContent>
                                 </Tooltip>
 
+                                {/* แก้ไข */}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Link href={`/po/${po.id}/edit`}>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-600 cursor-pointer">
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-600">
                                         <Edit className="h-4 w-4" />
                                       </Button>
                                     </Link>
@@ -254,13 +355,14 @@ export default function POListPage() {
                                   <TooltipContent>แก้ไข</TooltipContent>
                                 </Tooltip>
 
+                                {/* ลบ */}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 text-red-600 hover:text-red-700 cursor-pointer"
-                                      onClick={() => handleDelete(po.id, po.poNumber)} // ส่ง poNumber
+                                      className="h-8 w-8 text-red-600 hover:text-red-700"
+                                      onClick={() => handleDelete(po.id, po.poNumber)}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>

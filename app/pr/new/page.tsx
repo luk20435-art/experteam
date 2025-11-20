@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,71 +8,138 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Save, ChevronDown, FileText, DollarSign, Calendar, Package, User, AlertCircle } from "lucide-react"
+import { Plus, Trash2, Save, CreditCard, Building2, Briefcase, Check, ChevronsUpDown, ArrowLeft } from "lucide-react"
 import { useData } from "@/src/contexts/data-context"
-import type { PRItem, PurchaseRequisition } from "@/src/types"
+import type { PRItem, PurchaseRequisition, Project } from "@/src/types"
 import { useToast } from "@/hooks/use-toast"
-import { formatCurrency } from "@/src/lib/utils"
-import SupplierCombobox from "@/components/ui/SupplierCombobox"
-import JobNumberCombobox from "@/components/ui/jobNumberCombobox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { getDepartments } from '@/lib/storage'
+import { Department } from "@/app/lib/types"
+
+import {
+  Combobox,
+  ComboboxButton,
+  ComboboxInput,
+  ComboboxOption,
+  ComboboxOptions,
+} from "@headlessui/react"
+import { cn } from "@/lib/utils"
 
 export default function NewPRPage() {
   const router = useRouter()
-  const { addPR, prs } = useData()
+  const { addPR, prs, projects, clients, suppliers } = useData()
   const { toast } = useToast()
 
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("none")
+  const [isCalculatingFromDates, setIsCalculatingFromDates] = useState(false)
+  const [status, setStatus] = useState<"ร่าง" | "รออนุมัติ" | "อนุมัติแล้ว">("ร่าง")
+
+
   const [formData, setFormData] = useState({
-    title: "",
+    projectName: "",
     department: "",
+    client: "",
+    clientName: "",
+    supplier: "",
+    supplierName: "",
     requestedBy: "",
     requestDate: new Date().toISOString().split("T")[0],
     requiredDate: "",
-    purpose: "",
-    poNo: "",
-    relatedPrNo: "",
-    paymentType: "cash",
-    creditDays: "30",
-    date: "",
-    rosDate: "",
-    leadTime: "",
-    jobNumber: "",
-    jobName: "",
-    jobNote: "",
-    projectName: "",
-    client: "",
+    duration: "",
+    jobNo: "",
+    projectNote: "",
     ccNo: "",
-    supplier: "",
-    currency: "THB",
-    discountType: "",
-    discountValue: "",
-    withHoldingTax: false,
-    vat: "",
-    poCost: 0,
-    estimatedTotalJobCost: 0,
-    jobBalanceCost: 0,
-    deliveryLocation: "",
-    purchaseBy: "admin_expertteam admin",
     remark: "",
+    deliveryLocation: "",
+    expteamQuotation: "",
+    estimatedPrCost: "",
+    jobBalanceCost: "",
   })
 
   const [items, setItems] = useState<PRItem[]>([
-    {
-      id: "1",
-      itemNo: 1,
-      description: "",
-      quantity: 1,
-      unit: "",
-      estimatedPrice: 0,
-      totalPrice: 0,
-    },
+    { id: "1", itemNo: 1, description: "", quantity: 1, unit: "", estimatedPrice: 0, totalPrice: 0 },
   ])
 
   const [vatRate, setVatRate] = useState(7)
   const [serviceTaxRate, setServiceTaxRate] = useState(0)
 
+  // === ดึงข้อมูลโปรเจกต์ + Trader อัตโนมัติ ===
+  useEffect(() => {
+    if (selectedProjectId && selectedProjectId !== "none") {
+      const project = projects.find(p => p.id === selectedProjectId)
+      if (project) {
+        setFormData(prev => ({
+          ...prev,
+          projectName: project.name || "",
+          projectNumber: project.projectNumber || "",
+          jobNo: project.jobNo || "",
+          ccNo: project.ccNo || "",
+          client: project.trader || "",
+          traderName: project.trader ? (clients.find(c => c.id === project.trader)?.name || "") : "",
+          expteamQuotation: project.expteamQuotation || "",
+          estimatedPrCost: project.estimatedPrCost || "",
+          jobBalanceCost: project.jobBalanceCost || "",
+        }))
+      }
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        projectName: "",
+        jobNo: "",
+        projectNumber: "",
+        ccNo: "",
+        client: "",
+        clientName: "",
+        expteamQuotation: "",
+        estimatedPrCost: "",
+        jobBalanceCost: "",
+      }))
+    }
+  }, [selectedProjectId, projects, clients])
+
+  // === คำนวณ Duration จากวันที่ ===
+  useEffect(() => {
+    if (formData.requestDate && formData.requiredDate) {
+      const request = new Date(formData.requestDate)
+      const required = new Date(formData.requiredDate)
+      const diffTime = required.getTime() - request.getTime()
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      if (diffDays > 0) {
+        updateForm("duration", diffDays.toString())
+      } else {
+        updateForm("duration", "")
+      }
+    } else {
+      updateForm("duration", "")
+    }
+  }, [formData.requestDate, formData.requiredDate])
+
+  // === คำนวณ ROS Date จาก Duration (เฉพาะกรอกเอง) ===
+  useEffect(() => {
+    if (formData.requestDate && formData.duration && !isCalculatingFromDates) {
+      const days = parseInt(formData.duration) || 0
+      if (days > 0) {
+        const requestDate = new Date(formData.requestDate)
+        const required = new Date(requestDate)
+        required.setDate(requestDate.getDate() + days)
+        updateForm("requiredDate", required.toISOString().split("T")[0])
+      }
+    }
+  }, [formData.requestDate, formData.duration, isCalculatingFromDates])
+
+  const updateForm = (field: keyof typeof formData, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
   const addItem = () => {
     const newItem: PRItem = {
-      id: String(items.length + 1),
+      id: String(Date.now()),
       itemNo: items.length + 1,
       description: "",
       quantity: 1,
@@ -80,530 +147,553 @@ export default function NewPRPage() {
       estimatedPrice: 0,
       totalPrice: 0,
     }
-    setItems([...items, newItem])
+    setItems(prev => [...prev, newItem])
   }
 
   const removeItem = (id: string) => {
-    setItems(items.filter((item) => item.id !== id))
+    setItems(prev => prev.filter(item => item.id !== id))
   }
 
   const updateItem = (id: string, field: keyof PRItem, value: any) => {
-    setItems(
-      items.map((item) => {
+    setItems(prev =>
+      prev.map(item => {
         if (item.id === id) {
           const updated = { ...item, [field]: value }
           if (field === "quantity" || field === "estimatedPrice") {
-            updated.totalPrice = updated.quantity * updated.estimatedPrice
+            updated.totalPrice = (updated.quantity || 0) * (updated.estimatedPrice || 0)
           }
           return updated
         }
         return item
-      }),
+      })
     )
   }
 
-  const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
+  const subtotal = items.reduce((sum, item) => sum + (item.totalPrice || 0), 0)
   const vatAmount = (subtotal * vatRate) / 100
   const serviceTaxAmount = (subtotal * serviceTaxRate) / 100
   const totalAmount = subtotal + vatAmount + serviceTaxAmount
 
-  const handleSave = (status: "draft" | "submitted") => {
-    console.log("[v0] Saving PR with status:", status)
-    console.log("[v0] Form data:", formData)
-    console.log("[v0] Items:", items)
+  const expteamQuotation = parseFloat(formData.expteamQuotation) || 0
+  const estimatedPrCost = parseFloat(formData.estimatedPrCost) || 0
+  const jobBalanceCost = parseFloat(formData.jobBalanceCost) || 0
 
-    if (!formData.title) {
-      toast({
-        title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณากรอกหัวข้อ",
-        variant: "destructive",
-      })
+  const handleSave = (status: "draft" | "รออนุมัติ") => {
+    if (!formData.projectName || !formData.department || !formData.requestedBy) {
+      toast({ title: "กรุณากรอกข้อมูลให้ครบถ้วน", variant: "destructive" })
       return
     }
-
-    if (!formData.department) {
-      toast({
-        title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณากรอกแผนก",
-        variant: "destructive",
-      })
+    if (!formData.requiredDate && !formData.duration) {
+      toast({ title: "กรุณากรอก Duration หรือ วันที่ต้องการรับสินค้า", variant: "destructive" })
       return
     }
-
-    if (!formData.requestedBy) {
-      toast({
-        title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณากรอกชื่อผู้ขอ",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (!formData.requiredDate) {
-      toast({
-        title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณาเลือกวันที่ต้องการ",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (!formData.purpose) {
-      toast({
-        title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณากรอกวัตถุประสงค์",
-        variant: "destructive",
-      })
-      return
-    }
-
-    const invalidItem = items.find((item) => !item.description || !item.unit)
+    const invalidItem = items.find(item => !item.description || !item.unit)
     if (invalidItem) {
-      toast({
-        title: "ข้อมูลรายการไม่ครบถ้วน",
-        description: `กรุณากรอกรายการและหน่วยของรายการที่ ${invalidItem.itemNo}`,
-        variant: "destructive",
-      })
+      toast({ title: "กรอกรายการสินค้าให้ครบทุกช่อง", variant: "destructive" })
       return
     }
 
-    try {
-      const prCount = prs.length + 1
-      const prNumber = `PR${new Date().getFullYear()}${String(prCount).padStart(4, "0")}`
+    const prCount = prs.length + 1
+    const prNumber = `PR${new Date().getFullYear()}${String(prCount).padStart(4, "0")}`
 
-      console.log("[v0] Generated PR number:", prNumber)
-
-      const newPR: PurchaseRequisition = {
-        id: `pr-${Date.now()}`,
-        prNumber,
-        title: formData.title,
-        department: formData.department,
-        requestedBy: formData.requestedBy,
-        requestDate: formData.requestDate,
-        requiredDate: formData.requiredDate,
-        status,
-        items,
-        subtotal,
-        vatRate,
-        vatAmount,
-        serviceTaxRate,
-        serviceTaxAmount,
-        totalAmount,
-        purpose: formData.purpose,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-
-      console.log("[v0] Creating new PR:", newPR)
-
-      addPR(newPR)
-
-      toast({
-        title: "บันทึกสำเร็จ",
-        description: `บันทึก PR ${prNumber} เป็น${status === "draft" ? "ฉบับร่าง" : "บันทึกแล้ว"}สำเร็จ`,
-      })
-
-      setTimeout(() => {
-        router.push("/pr")
-      }, 500)
-    } catch (error) {
-      console.error("[v0] Error saving PR:", error)
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถบันทึก PR ได้ กรุณาลองใหม่อีกครั้ง",
-        variant: "destructive",
-      })
+    const newPR: PurchaseRequisition = {
+      id: `pr-${Date.now()}`,
+      prNumber,
+      projectName: formData.projectName,
+      department: formData.department,
+      requestedBy: formData.requestedBy,
+      requestDate: formData.requestDate,
+      requiredDate: formData.requiredDate,
+      duration: formData.duration,
+      status,
+      jobNo: formData.jobNo || "",
+      projectNote: formData.projectNote || "",
+      ccNo: formData.ccNo || "",
+      supplier: formData.supplier || "",
+      supplierName: formData.supplierName || "",
+      deliveryLocation: formData.deliveryLocation || "",
+      remark: formData.remark || "",
+      items: items.map((item, i) => ({ ...item, itemNo: i + 1 })),
+      subtotal,
+      vatRate,
+      vatAmount,
+      serviceTaxRate,
+      serviceTaxAmount,
+      totalAmount,
+      projectId: selectedProjectId !== "none" ? selectedProjectId : undefined,
+      clientId: formData.client || undefined,
+      clientName: formData.clientName || undefined,
+      expteamQuotation: formData.expteamQuotation || "",
+      estimatedPrCost: formData.estimatedPrCost || "",
+      jobBalanceCost: formData.jobBalanceCost || "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }
+
+    addPR(newPR)
+    toast({ title: "สร้าง PR สำเร็จ!", description: `เลขที่ ${prNumber}` })
+    router.push("/pr")
   }
 
-  const SectionTitle = ({ icon: Icon, title }: { icon: React.ReactNode; title: string }) => (
-    <div className="flex items-center gap-3 mb-6">
-      <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg">
-        {Icon}
-      </div>
-      <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-    </div>
-  )
+  const [departments, setDepartments] = useState<Department[]>([])
+  useEffect(() => {
+    setDepartments(getDepartments())
+  }, [])
 
-  const InputField = ({ label, id, required, ...props }: any) => (
-    <div>
-      <label htmlFor={id} className="block text-sm font-semibold text-slate-700 mb-2">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      <Input
-        id={id}
-        {...props}
-        className="rounded-lg border border-slate-300 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-      />
-    </div>
-  )
+  // === Client Combobox (ดึง trader จาก project) ===
+  function ClientCombobox() {
+    const [query, setQuery] = useState("")
+    const filteredClients = useMemo(() => {
+      if (!query.trim()) return clients.filter(c => c.status === "active")
+      return clients
+        .filter(c => c.status === "active")
+        .filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
+    }, [clients, query])
 
-  const SelectField = ({ label, id, required, options, ...props }: any) => (
-    <div>
-      <label htmlFor={id} className="block text-sm font-semibold text-slate-700 mb-2">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
+    return (
       <div className="relative">
-        <select
-          id={id}
-          {...props}
-          className="w-full px-3 py-2 rounded-lg border border-slate-300 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition appearance-none bg-white"
+        <Combobox
+          value={formData.client}
+          onChange={(v: string | null) => {
+            const selected = clients.find(c => c.id === v)
+            updateForm("client", v ?? "")
+            updateForm("clientName", selected?.name ?? "")
+          }}
+          nullable
         >
-          {options.map((opt: any) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Building2 className="h-5 w-5 text-slate-400" />
+            </div>
+            <ComboboxInput
+              className={cn(
+                "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
+                "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all",
+                "placeholder:text-slate-400"
+              )}
+              displayValue={(id: string) => {
+                if (id) return clients.find(c => c.id === id)?.name || ""
+                return formData.clientName || ""
+              }}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="เลือก Trader (ลูกค้า)"
+            />
+            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
+              <ChevronsUpDown className="h-4 w-4 text-slate-400" />
+            </ComboboxButton>
+          </div>
+          <ComboboxOptions className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            {filteredClients.length === 0 ? (
+              <div className="px-4 py-2 text-slate-500">ไม่พบลูกค้า</div>
+            ) : (
+              filteredClients.map((client) => (
+                <ComboboxOption
+                  key={client.id}
+                  value={client.id}
+                  className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
+                >
+                  {({ selected, active }) => (
+                    <>
+                      <span className={cn("block truncate", selected && "font-medium")}>
+                        {client.name} {client.contactPerson && `(${client.contactPerson})`}
+                      </span>
+                      {selected && (
+                        <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
+                          <Check className="h-5 w-5" />
+                        </span>
+                      )}
+                    </>
+                  )}
+                </ComboboxOption>
+              ))
+            )}
+          </ComboboxOptions>
+        </Combobox>
       </div>
-    </div>
-  )
+    )
+  }
+
+  // === Supplier Combobox ===
+  function SupplierCombobox() {
+    const [query, setQuery] = useState("")
+    const filteredSuppliers = useMemo(() => {
+      if (!query.trim()) return suppliers.filter(s => s.status === "active")
+      return suppliers
+        .filter(s => s.status === "active")
+        .filter(s => s.name.toLowerCase().includes(query.toLowerCase()))
+    }, [suppliers, query])
+
+    return (
+      <div className="relative">
+        <Combobox
+          value={formData.supplier}
+          onChange={(v: string | null) => {
+            const selected = suppliers.find(s => s.id === v)
+            updateForm("supplier", v ?? "")
+            updateForm("supplierName", selected?.name ?? "")
+          }}
+          nullable
+        >
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Building2 className="h-5 w-5 text-slate-400" />
+            </div>
+            <ComboboxInput
+              className={cn(
+                "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
+                "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all",
+                "placeholder:text-slate-400"
+              )}
+              displayValue={(id: string) => suppliers.find(s => s.id === id)?.name ?? ""}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="เลือกซัพพลายเออร์"
+            />
+            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
+              <ChevronsUpDown className="h-4 w-4 text-slate-400" />
+            </ComboboxButton>
+          </div>
+          <ComboboxOptions className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            {filteredSuppliers.length === 0 ? (
+              <div className="px-4 py-2 text-slate-500">ไม่พบซัพพลายเออร์</div>
+            ) : (
+              filteredSuppliers.map((supplier) => (
+                <ComboboxOption
+                  key={supplier.id}
+                  value={supplier.id}
+                  className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
+                >
+                  {({ selected, active }) => (
+                    <>
+                      <span className={cn("block truncate", selected && "font-medium")}>
+                        {supplier.name}
+                      </span>
+                      {selected && (
+                        <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
+                          <Check className="h-5 w-5" />
+                        </span>
+                      )}
+                    </>
+                  )}
+                </ComboboxOption>
+              ))
+            )}
+          </ComboboxOptions>
+        </Combobox>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 p-4 md:p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
+      <div className="w-full px-4 py-4 md:py-6 space-y-6">
 
         {/* Header */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">สร้างใบขอซื้อใหม่</h1>
-            <p className="text-slate-600 mt-1">กรอกข้อมูลใบขอซื้อ</p>
-          </div>
-          <div className="flex gap-3 w-full md:w-auto">
-            <Button
-              variant="outline"
-              onClick={() => handleSave("draft")}
-              className="flex items-center gap-2 rounded-lg border-2 border-slate-300 hover:bg-slate-100"
-            >
-              <Save className="h-4 w-4" />
-              บันทึกร่าง
-            </Button>
-            <Button
-              onClick={() => handleSave("submitted")}
-              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-lg hover:shadow-blue-500/30"
-            >
-              <Save className="h-4 w-4" />
-              บันทึก
-            </Button>
-          </div>
-        </div>
-
-        {/* General Information Card */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-          <div className="h-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600"></div>
-
-          <div className="p-2">
-            <div className="border-t border-slate-200 my-4"></div>
-
-            {/* Payment & Discount */}
-            <div className="mb-8">
-              <SectionTitle icon={<DollarSign className="w-5 h-5 text-white" />} title="Payment & Discount" />
-
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-slate-700 mb-3">
-                  Payment Type <span className="text-red-500">*</span>
-                </label>
-                <div className="flex flex-wrap items-center gap-6 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  {['cash', 'credit'].map(type => (
-                    <label key={type} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="paymentType"
-                        value={type}
-                        checked={formData.paymentType === type}
-                        onChange={(e: any) => setFormData({ ...formData, paymentType: e.target.value })}
-                        className="w-4 h-4 text-blue-600 accent-blue-600"
-                      />
-                      <span className="text-sm font-medium text-slate-700 capitalize">{type}</span>
-                    </label>
-                  ))}
-                  {formData.paymentType === 'credit' && (
-                    <Input
-                      value={formData.creditDays}
-                      onChange={(e: any) => setFormData({ ...formData, creditDays: e.target.value })}
-                      placeholder="30 days"
-                      className="ml-auto w-32 rounded-lg border border-blue-300"
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <SelectField
-                  label="Currency"
-                  id="currency"
-                  required
-                  value={formData.currency}
-                  onChange={(e: any) => setFormData({ ...formData, currency: e.target.value })}
-                  options={[
-                    { value: 'THB', label: 'THB' },
-                    { value: 'USD', label: 'USD' },
-                    { value: 'EUR', label: 'EUR' }
-                  ]}
-                />
-              </div>
-            </div>
-
-            {/* Timeline */}
-            <div className="mb-8">
-              <SectionTitle icon={<Calendar className="w-5 h-5 text-white" />} title="Timeline" />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <InputField
-                  label="Date"
-                  id="date"
-                  type="date"
-                  required
-                  value={formData.date}
-                  onChange={(e: any) => setFormData({ ...formData, date: e.target.value })}
-                />
-                <InputField
-                  label="ROS Date"
-                  id="rosDate"
-                  type="date"
-                  value={formData.rosDate}
-                  onChange={(e: any) => setFormData({ ...formData, rosDate: e.target.value })}
-                />
-                <InputField
-                  label="Lead Time"
-                  id="leadTime"
-                  value={formData.leadTime}
-                  onChange={(e: any) => setFormData({ ...formData, leadTime: e.target.value })}
-                  placeholder="5-7 working days"
-                />
-              </div>
-            </div>
-
-            {/* Job Information */}
-            <div className="mb-8">
-              <SectionTitle icon={<Package className="w-5 h-5 text-white" />} title="Job Information" />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <JobNumberCombobox
-                  value={formData.jobNumber}
-                  onChange={(value) => setFormData({ ...formData, jobNumber: value })}
-                  required
-                />
-                <InputField
-                  label="Job Name"
-                  id="jobName"
-                  value={formData.jobName}
-                  onChange={(e: any) => setFormData({ ...formData, jobName: e.target.value })}
-                  placeholder="Job Name"
-                />
-                <InputField
-                  label="Job Note"
-                  id="jobNote"
-                  value={formData.jobNote}
-                  onChange={(e: any) => setFormData({ ...formData, jobNote: e.target.value })}
-                  placeholder="Job Note"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <InputField
-                  label="Project Name"
-                  id="projectName"
-                  value={formData.projectName}
-                  onChange={(e: any) => setFormData({ ...formData, projectName: e.target.value })}
-                  placeholder="Project Name"
-                />
-                <InputField
-                  label="Client"
-                  id="client"
-                  value={formData.client}
-                  onChange={(e: any) => setFormData({ ...formData, client: e.target.value })}
-                  placeholder="Client"
-                />
-                <InputField
-                  label="CC No."
-                  id="ccNo"
-                  value={formData.ccNo}
-                  onChange={(e: any) => setFormData({ ...formData, ccNo: e.target.value })}
-                  placeholder="ON/475-10/2024"
-                />
-              </div>
-            </div>
-
-            {/* Supplier & Delivery */}
-            <div className="mb-8">
-              <SectionTitle icon={<User className="w-5 h-5 text-white" />} title="Supplier & Delivery" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <SupplierCombobox
-                  value={formData.supplier}
-                  onChange={(v) => setFormData({ ...formData, supplier: v })}
-                  required
-                />
-                <InputField
-                  label="Delivery Location"
-                  id="deliveryLocation"
-                  required
-                  value={formData.deliveryLocation}
-                  onChange={(e: any) => setFormData({ ...formData, deliveryLocation: e.target.value })}
-                  placeholder="Delivery Location"
-                />
-              </div>
-            </div>
-
-
-            {/* Additional Info */}
-            <div>
-              <SectionTitle icon={<FileText className="w-5 h-5 text-white" />} title="Additional Information" />
-
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Purchase by</label>
-                <div className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-300">
-                  <p className="text-sm font-medium text-slate-900">{formData.purchaseBy}</p>
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="remark" className="block text-sm font-semibold text-slate-700 mb-2">Remark</label>
-                <Textarea
-                  id="remark"
-                  value={formData.remark}
-                  onChange={(e: any) => setFormData({ ...formData, remark: e.target.value })}
-                  placeholder=""
-                  rows={3}
-                  className="rounded-lg border border-slate-300 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Items Card */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-          <div className="h-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600"></div>
-
-          <div className="p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold text-slate-900">รายการสินค้า</h2>
+        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
               <Button
-                onClick={addItem}
+                variant="ghost"
                 size="sm"
-                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-lg hover:shadow-blue-500/30"
+                onClick={() => router.push("/pr")}
+                className="hover:bg-slate-100"
               >
-                <Plus className="mr-2 h-4 w-4" />
-                เพิ่มรายการ
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Increase (PR)</h1>
+                <p className="text-sm text-slate-600">กรอกข้อมูลใบขอซื้อ PR</p>
+              </div>
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => handleSave("draft")}
+                className="flex-1 sm:flex-none bg-yellow-400 hover:bg-yellow-600 hover:text-white">
+                <Save className="h-4 w-4 mr-1 " /> บันทึกร่าง
+              </Button>
+              <Button
+                onClick={() => handleSave("รออนุมัติ")}
+                className="flex-1 sm:flex-none bg-blue-600 hover:bg-green-600">
+                <Save className="h-4 w-4 mr-1" /> บันทึก
               </Button>
             </div>
+          </div>
+        </div>
 
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50">
-                    <TableHead className="w-12 font-bold">ลำดับ</TableHead>
-                    <TableHead className="font-bold">รายการ</TableHead>
-                    <TableHead className="w-24 font-bold">จำนวน</TableHead>
-                    <TableHead className="w-24 font-bold">หน่วย</TableHead>
-                    <TableHead className="w-32 font-bold">ราคาประมาณ</TableHead>
-                    <TableHead className="w-32 font-bold">รวม</TableHead>
-                    <TableHead className="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id} className="hover:bg-slate-50">
-                      <TableCell className="font-medium text-slate-900">{item.itemNo}</TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.description}
-                          onChange={(e) => updateItem(item.id, "description", e.target.value)}
-                          placeholder="ระบุรายการ"
-                          className="rounded-lg border border-slate-300"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(item.id, "quantity", Number(e.target.value))}
-                          min="1"
-                          className="rounded-lg border border-slate-300"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.unit}
-                          onChange={(e) => updateItem(item.id, "unit", e.target.value)}
-                          placeholder="หน่วย"
-                          className="rounded-lg border border-slate-300"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.estimatedPrice}
-                          onChange={(e) => updateItem(item.id, "estimatedPrice", Number(e.target.value))}
-                          min="0"
-                          className="rounded-lg border border-slate-300"
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-bold text-slate-900">{item.totalPrice.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeItem(item.id)}
-                          disabled={items.length === 1}
-                          className="hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+        {/* เลือกโปรเจกต์ */}
+        <Card>
+          <CardHeader className="">
+            <CardTitle className="text-lg">Projects</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="เลือกโปรเจกต์ หรือไม่ผูกโปรเจกต์" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">เลือกโครงการ</SelectItem>
+                {projects.map(p => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.jobNo} - {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+
+        {/* ฟอร์มหลัก */}
+        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6 space-y-6">
+
+          {/* Row 1 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Project Name</Label>
+              <Input value={formData.projectName} onChange={e => updateForm("projectName", e.target.value)} placeholder="Project Name" className="h-10 text-sm" />
             </div>
+            <div className="space-y-2">
+              <Label>Department</Label>
+              <Select value={formData.department} onValueChange={(v) => updateForm("department", v)}>
+                <SelectTrigger className="h-10 text-sm w-full"><SelectValue placeholder="เลือกแผนก" /></SelectTrigger>
+                <SelectContent>
+                  {departments.map(dept => (
+                    <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Requester</Label>
+              <Input value={formData.requestedBy} onChange={e => updateForm("requestedBy", e.target.value)} placeholder="ชื่อ-สกุล" className="h-10 text-sm" />
+            </div>
+          </div>
 
-            <div className="mt-8 space-y-4 border-t pt-6">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-600 font-medium">ยอดรวม (ก่อนภาษี)</span>
-                <span className="font-bold text-slate-900">{subtotal.toLocaleString()} บาท</span>
-              </div>
+          {/* Row 2 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Request date</Label>
+              <Input
+                type="date"
+                value={formData.requestDate}
+                onChange={e => {
+                  updateForm("requestDate", e.target.value)
+                  setIsCalculatingFromDates(true)
+                }}
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>ROS date <span className="text-xs text-green-600"></span></Label>
+              <Input
+                type="date"
+                value={formData.requiredDate}
+                onChange={e => {
+                  updateForm("requiredDate", e.target.value)
+                  setIsCalculatingFromDates(true)
+                }}
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Duration<span className="text-xs"></span></Label>
+              <Input
+                type="number"
+                value={formData.duration}
+                onChange={e => {
+                  updateForm("duration", e.target.value)
+                  setIsCalculatingFromDates(false)
+                }}
+                placeholder="คำนวณอัตโนมัติ"
+                className="h-10 text-sm"
+                min="1"
+              />
+            </div>
+          </div>
 
-              <div className="flex items-center justify-between gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-3">
-                  <label htmlFor="vatRate" className="text-sm font-semibold text-slate-700">
-                    ภาษีมูลค่าเพิ่ม (VAT)
-                  </label>
-                  <Input
-                    id="vatRate"
-                    type="number"
-                    value={vatRate}
-                    onChange={(e: any) => setVatRate(Number(e.target.value))}
-                    className="w-20 rounded-lg border border-blue-300"
-                    min="0"
-                    max="100"
-                  />
-                  <span className="text-sm font-medium">%</span>
-                </div>
-                <span className="font-bold text-slate-900">{vatAmount.toLocaleString()} บาท</span>
+          {/* Row 3 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>Job No.</Label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 h-10 flex items-center text-slate-400" />
+                <Input
+                  value={formData.jobNo ?? ""}
+                  onChange={e => updateForm("projectNote", e.target.value)}
+                  placeholder="Job No."
+                  className="h-10 text-sm" />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Trader (ลูกค้า)</Label>
+              <ClientCombobox />
+            </div>
+            <div className="space-y-2">
+              <Label>CC No.</Label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 h-10 flex items-center text-slate-400" />
+                <Input
+                  value={formData.ccNo ?? ""}
+                  onChange={e => updateForm("ccNo", e.target.value)}
+                  placeholder="1101-01"
+                  className="h-10 text-sm" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Expteam Quotation</Label>
+              <Input
+                type="number"
+                value={formData.expteamQuotation}
+                onChange={e => updateForm("expteamQuotation", e.target.value)}
+                placeholder="Expteam Quotation"
+                className="h-10 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Estimated PR Cost</Label>
+              <Input
+                type="number"
+                value={formData.estimatedPrCost}
+                onChange={e => updateForm("estimatedPrCost", e.target.value)}
+                placeholder="Estimated PR Cost"
+                className="h-10 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Job Balance Cost</Label>
+              <Input
+                value={formData.jobBalanceCost}
+                onChange={e => updateForm("jobBalanceCost", e.target.value)}
+                placeholder="Job Balance Cost"
+                className="h-10 text-sm" />
+            </div>
+          </div>
 
-              <div className="flex items-center justify-between gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-3">
-                  <label htmlFor="serviceTaxRate" className="text-sm font-semibold text-slate-700">
-                    ภาษีการบริการ
-                  </label>
-                  <Input
-                    id="serviceTaxRate"
-                    type="number"
-                    value={serviceTaxRate}
-                    onChange={(e: any) => setServiceTaxRate(Number(e.target.value))}
-                    className="w-20 rounded-lg border border-blue-300"
-                    min="0"
-                    max="100"
-                  />
-                  <span className="text-sm font-medium">%</span>
-                </div>
-                <span className="font-bold text-slate-900">{serviceTaxAmount.toLocaleString()} บาท</span>
-              </div>
+          {/* Row 4 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Supplier</Label>
+              <SupplierCombobox />
+            </div>
+            <div className="space-y-2">
+              <Label>สถานะ</Label>
+              <Select value={status} onValueChange={v => setStatus(v as any)}>
+                <SelectTrigger className="h-10 text-sm w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ร่าง">ร่าง</SelectItem>
+                  <SelectItem value="รออนุมัติ">รออนุมัติ</SelectItem>
+                  <SelectItem value="อนุมัติแล้ว">อนุมัติแล้ว</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
-              <div className="flex justify-between items-center border-t-2 border-slate-300 pt-6 mt-6 bg-gradient-to-r from-slate-50 to-blue-50 p-4 rounded-lg">
-                <span className="text-lg font-bold text-slate-900">รวมทั้งสิ้น</span>
-                <span className="text-3xl font-bold text-blue-600">{totalAmount.toLocaleString()} บาท</span>
-              </div>
+          <div className="space-y-2">
+            <Label>Delivery Location</Label>
+            <Input value={formData.deliveryLocation} onChange={e => updateForm("deliveryLocation", e.target.value)} placeholder="สถานที่ส่งของ" className="h-10 text-sm" />
+          </div>
+
+          {/* หมายเหตุ */}
+          <div className="space-y-2">
+            <Label>Remark</Label>
+            <Textarea value={formData.remark} onChange={e => updateForm("remark", e.target.value)} rows={3} placeholder="หมายเหตุเพิ่มเติม..." className="resize-none text-sm" />
+          </div>
+        </div>
+
+        {/* ตารางรายการสินค้า */}
+        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+            <h2 className="font-bold text-lg">รายการสินค้า</h2>
+            <Button onClick={addItem} size="sm" className="bg-blue-600 hover:bg-green-600">
+              <Plus className="h-4 w-4 mr-1 " /> เพิ่มรายการ
+            </Button>
+          </div>
+
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12 sm:w-16">ลำดับ</TableHead>
+                  <TableHead>รายการ</TableHead>
+                  <TableHead className="w-20 sm:w-24 text-center">จำนวน</TableHead>
+                  <TableHead className="w-20 sm:w-24 text-center">หน่วย</TableHead>
+                  <TableHead className="w-28 sm:w-32 text-right">ราคา/หน่วย</TableHead>
+                  <TableHead className="w-28 sm:w-32 text-right">รวม</TableHead>
+                  <TableHead className="w-16 sm:w-20"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map(item => (
+                  <TableRow key={item.id}>
+                    <TableCell className="text-center">{item.itemNo}</TableCell>
+                    <TableCell>
+                      <Input
+                        value={item.description}
+                        onChange={e => updateItem(item.id, "description", e.target.value)}
+                        placeholder=""
+                        className="h-9 text-sm" />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        value={item.quantity}
+                        onChange={e => updateItem(item.id, "quantity", Number(e.target.value) || 0)} min="1"
+                        className="h-9 w-full text-sm" />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        value={item.unit}
+                        onChange={e => updateItem(item.id, "unit", e.target.value)}
+                        placeholder=""
+                        className="h-9 w-full text-sm" />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        value={item.estimatedPrice}
+                        onChange={e => updateItem(item.id, "estimatedPrice", Number(e.target.value) || 0)} min="0"
+                        className="h-9 w-full text-sm text-right" />
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {item.totalPrice.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} disabled={items.length === 1} className="h-8 w-8">
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* สรุปยอด */}
+          <div className="mt-6 border-t pt-4 space-y-2 text-right">
+            <div className="flex justify-end gap-4 sm:gap-8 items-center">
+              <span className="text-sm sm:text-base">ยอดรวม</span>
+              <span className="font-medium w-28 sm:w-32">{subtotal.toLocaleString()} บาท</span>
+            </div>
+            <div className="flex justify-end gap-4 sm:gap-8 items-center">
+              <span className="text-sm sm:text-base">VAT (%)</span>
+              <input
+                type="number"
+                value={vatRate}
+                onChange={e => setVatRate(Number(e.target.value) || 0)}
+                className="w-16 p-1 border rounded text-right text-sm" min="0" step="0.01" />
+              <span className="font-medium w-28 sm:w-32">{vatAmount.toLocaleString()} บาท</span>
+            </div>
+            <div className="flex justify-end gap-4 sm:gap-8 items-center">
+              <span className="text-sm sm:text-base">Service Tax (%)</span>
+              <input
+                type="number"
+                value={serviceTaxRate}
+                onChange={e => setServiceTaxRate(Number(e.target.value) || 0)}
+                className="w-16 p-1 border rounded text-right text-sm" min="0" step="0.01" />
+              <span className="font-medium w-28 sm:w-32">{serviceTaxAmount.toLocaleString()} บาท</span>
+            </div>
+            <div className="flex justify-end gap-4 sm:gap-8 items-center pt-2 border-t">
+              <span className="text-lg font-bold">รวมทั้งสิ้น</span>
+              <span className="text-xl font-bold text-blue-600 w-28 sm:w-32">{totalAmount.toLocaleString()} บาท</span>
             </div>
           </div>
         </div>
