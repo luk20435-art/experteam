@@ -1,485 +1,498 @@
+// app/job/[id]/edit/page.tsx
+
 "use client"
 
+import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { useData } from "@/src/contexts/data-context"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Save, Building2, Phone, Mail, DollarSign, FileText, Hash, Tag, Clock, Users } from "lucide-react"
-import { useEffect, useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  Combobox,
-  ComboboxButton,
-  ComboboxInput,
-  ComboboxOption,
-  ComboboxOptions,
-} from "@headlessui/react"
-import { Check, ChevronsUpDown } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { useToast } from "@/hooks/use-toast"
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog"
+import { ArrowLeft, Save, CheckCircle2, AlertCircle } from "lucide-react"
 
-export default function EditProjectPage() {
-  const params = useParams()
+const BACKEND_URL = "http://localhost:3000"
+
+interface Trader {
+  id: string | number
+  name: string
+}
+
+export default function EditJobPage() {
+  const { id } = useParams()
   const router = useRouter()
-  const { getProject, updateProject, clients } = useData()
-  const { toast } = useToast()
-  const project = getProject(params.id as string)
+  const [loading, setLoading] = useState(false)
+  const [jobLoading, setJobLoading] = useState(true)
+  const [job, setJob] = useState<any>(null)
+  const [traders, setTraders] = useState<Trader[]>([])
 
-  const [formValues, setFormValues] = useState({
-    jobName: "",
-    jobCode: "",
-    traderId: "",
-    ccNo: "",
-    jobNo: "",
-    waNumber: "",
-    wrPoSrRoNumber: "",
-    expteamQuotation: "",
-    contactPerson: "",
-    contactEmail: "",
-    estimatedPrCost: "",
-    description: "",
-    startDate: "",
-    endDate: "",
-    status: "planning" as any,
-    material: "",
-    manPower: "",
-    op: "",
-    ie: "",
-    supply: "",
-    engineer: "",
-    contactNumber: "",
-
-  })
+  // Modal states
+  const [openConfirm, setOpenConfirm] = useState(false)
+  const [openSuccess, setOpenSuccess] = useState(false)
+  const [openError, setOpenError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
 
   useEffect(() => {
-    if (project && clients.length > 0) {
-      const sectionMap: any = {}
-      project.sections.forEach((sec: any) => {
-        const key = sec.name.toLowerCase().replace(" ", "") as keyof typeof formValues
-        sectionMap[key] = sec.budget.toString()
-      })
+    if (!id) return
 
-      const traderClient = clients.find(c => c.name === project.trader)
-      const traderId = traderClient ? traderClient.id : ""
-
-      setFormValues({
-        jobName: project.name || "",
-        jobCode: project.code || "",
-        traderId,
-        ccNo: project.ccNo || "",
-        jobNo: project.jobNo || "",
-        waNumber: project.waNumber || "",
-        wrPoSrRoNumber: project.wrPoSrRoNumber || "",
-        expteamQuotation: project.expteamQuotation || "",
-        contactPerson: project.contactPerson || "",
-        contactEmail: project.contactEmail || "",
-        estimatedPrCost: project.estimatedPrCost || "",
-        contactNumber: project.contactNumber || "",
-        description: project.description || "",
-        startDate: project.startDate || "",
-        endDate: project.endDate || "",
-        status: project.status || "planning",
-        ...sectionMap,
-      })
+    async function fetchJob() {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/jobs/${id}`)
+        if (!res.ok) throw new Error("ดึงข้อมูลไม่สำเร็จ")
+        const data = await res.json()
+        setJob(data)
+      } catch (error) {
+        console.error("Error fetching job:", error)
+        setErrorMessage("ดึงข้อมูลงานล้มเหลว")
+        setOpenError(true)
+      } finally {
+        setJobLoading(false)
+      }
     }
-  }, [project, clients])
 
-  if (!project) {
+    fetchJob()
+  }, [id])
+
+  useEffect(() => {
+    async function fetchTraders() {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/traders`, { cache: "no-store" })
+        if (!res.ok) throw new Error("ดึงข้อมูลล้มเหลว")
+        const data = await res.json()
+        const list = Array.isArray(data) ? data : data.data || []
+        setTraders(list)
+      } catch (error) {
+        console.error("Error fetching traders:", error)
+      }
+    }
+
+    fetchTraders()
+  }, [])
+
+  const handleSaveClick = () => {
+    if (!job?.jobName?.trim()) {
+      setErrorMessage("กรุณากรอกชื่องาน")
+      setOpenError(true)
+      return
+    }
+    setOpenConfirm(true)
+  }
+
+  const confirmSave = async () => {
+    setLoading(true)
+    setOpenConfirm(false)
+
+    try {
+      // เอาเฉพาะ field ที่ต้องการ ไม่ส่ง field ที่ไม่จำเป็น
+      const payload = {
+        jobName: job.jobName || "",
+        projectCode: job.projectCode || null,
+        jobNo: job.jobNo || null,
+        ccNo: job.ccNo || null,
+        waNumber: job.waNumber || null,
+        wrPoSrRoNumber: job.wrPoSrRoNumber || null,
+        contactPerson: job.contactPerson || null,
+        contactNumber: job.contactNumber || null,
+        contactEmail: job.contactEmail || null,
+        traderId: job.traderId ? Number(job.traderId) : null,
+        expteamQuotation: job.expteamQuotation || null,
+        estimatedPrCost: job.estimatedPrCost ? Number(job.estimatedPrCost) : 0,
+        startDate: job.startDate || null,
+        endDate: job.endDate || null,
+        remark: job.remark || null,
+        budgetMaterial: job.budgetMaterial ? Number(job.budgetMaterial) : 0,
+        budgetManPower: job.budgetManPower ? Number(job.budgetManPower) : 0,
+        budgetOp: job.budgetOp ? Number(job.budgetOp) : 0,
+        budgetIe: job.budgetIe ? Number(job.budgetIe) : 0,
+        budgetSupply: job.budgetSupply ? Number(job.budgetSupply) : 0,
+        budgetEngineer: job.budgetEngineer ? Number(job.budgetEngineer) : 0,
+        status: job.status || "in_progress",
+      }
+
+      const res = await fetch(`${BACKEND_URL}/api/jobs/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.message || "แก้ไขไม่สำเร็จ")
+      }
+
+      setOpenSuccess(true)
+      setTimeout(() => router.push(`/project`), 1500)
+    } catch (error: any) {
+      setErrorMessage(error.message || "เกิดข้อผิดพลาดในการบันทึก")
+      setOpenError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (jobLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="text-center space-y-4 bg-white p-8 rounded-2xl shadow-lg">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto"></div>
-          <p className="text-xl text-slate-900">กำลังโหลด...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-lg text-gray-600">กำลังโหลด...</p>
         </div>
       </div>
     )
   }
 
-  const calculateDuration = () => {
-    if (!formValues.startDate || !formValues.endDate) return 0
-    const s = new Date(formValues.startDate)
-    const e = new Date(formValues.endDate)
-    return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    const sections = [
-      { id: `sec-${Date.now()}-1`, name: "Material" as const, budget: Number(formValues.material) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-2`, name: "Man Power" as const, budget: Number(formValues.manPower) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-3`, name: "OP" as const, budget: Number(formValues.op) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-4`, name: "IE" as const, budget: Number(formValues.ie) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-5`, name: "Supply" as const, budget: Number(formValues.supply) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-6`, name: "Engineer" as const, budget: Number(formValues.engineer) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-    ]
-
-    const selectedClient = clients.find(c => c.id === formValues.traderId)
-    const traderName = selectedClient ? selectedClient.name : project.trader || "ไม่ระบุ"
-
-    const updatedProject = {
-      ...project,
-      name: formValues.jobName,
-      code: formValues.jobCode,
-      description: formValues.description,
-      startDate: formValues.startDate,
-      endDate: formValues.endDate,
-      status: formValues.status,
-      totalBudget: sections.reduce((sum, s) => sum + s.budget, 0),
-      sections,
-      duration: calculateDuration(),
-      ccNo: formValues.ccNo,
-      jobNo: formValues.jobNo,
-      waNumber: formValues.waNumber,
-      wrPoSrRoNumber: formValues.wrPoSrRoNumber,
-      expteamQuotation: formValues.expteamQuotation,
-      contactPerson: formValues.contactPerson,
-      contactEmail: formValues.contactEmail,
-      estimatedPrCost: formValues.estimatedPrCost,
-      trader: traderName,
-      traderId: formValues.traderId,
-      contactNumber: formValues.contactNumber,
-    }
-
-    updateProject(project.id, updatedProject)
-    toast({ title: "บันทึกสำเร็จ!", description: "ข้อมูลโครงการถูกอัปเดตแล้ว" })
-    router.push(`/project/${project.id}`)
-  }
-
-  const handleChange = (field: keyof typeof formValues, value: string) => {
-    setFormValues(prev => ({ ...prev, [field]: value }))
-  }
-
-  function TraderCombobox() {
-    const [query, setQuery] = useState("")
-    const filtered = query === ""
-      ? clients.filter(c => c.status === "active")
-      : clients.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
-
+  if (!job) {
     return (
-      <div className="relative">
-        <Combobox
-          value={formValues.traderId}
-          onChange={(v: string | null) => handleChange("traderId", v ?? "")}
-          nullable
-        >
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Building2 className="h-5 w-5 text-slate-400" />
-            </div>
-            <ComboboxInput
-              className={cn(
-                "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
-                "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all",
-                "placeholder:text-slate-400"
-              )}
-              displayValue={(id: string) => clients.find(c => c.id === id)?.name ?? ""}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="เลือก Trader"
-            />
-            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
-              <ChevronsUpDown className="h-4 w-4 text-slate-400" />
-            </ComboboxButton>
-          </div>
-          <ComboboxOptions className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-            {filtered.length === 0 ? (
-              <div className="px-4 py-2 text-slate-500">ไม่พบ Trader</div>
-            ) : (
-              filtered.map((client) => (
-                <ComboboxOption
-                  key={client.id}
-                  value={client.id}
-                  className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
-                >
-                  {({ selected, active }) => (
-                    <>
-                      <span className={cn("block truncate", selected && "font-medium")}>
-                        {client.name}
-                      </span>
-                      {selected && (
-                        <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
-                          <Check className="h-5 w-5" />
-                        </span>
-                      )}
-                    </>
-                  )}
-                </ComboboxOption>
-              ))
-            )}
-          </ComboboxOptions>
-        </Combobox>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <p className="text-lg text-gray-600">ไม่พบข้อมูลงาน</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
-      <div className="w-full px-4 py-4 md:py-6 space-y-6">
-
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push(`/project/${project.id}`)}
-                className="hover:bg-slate-100"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Edit (Job)</h1>
-                <p className="text-sm text-slate-600">รหัส: {project.projectNumber}</p>
+    <>
+      {/* Modal ยืนยัน */}
+      <AlertDialog open={openConfirm} onOpenChange={setOpenConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm the revision.?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 py-4 text-left">
+                <p><strong>jobName:</strong> {job.jobName}</p>
+                <p><strong>start Date:</strong> {job.startDate ? new Date(job.startDate).toLocaleDateString("th-TH") : "-"}</p>
               </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="cursor-pointer dark:bg-red-600 hover:bg-red-400 bg-red-600 text-white">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmSave}
+              disabled={loading}
+              className="bg-green-600 hover:bg-green-700 cursor-pointer"
+            >
+              {loading ? "Confirming..." : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal สำเร็จ */}
+      <AlertDialog open={openSuccess}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-3 text-green-600 text-2xl">
+              <CheckCircle2 className="h-8 w-8" />
+              Edit success!
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-lg">
+              กำลังพาคุณกลับไปหน้ารายละเอียด...
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal ผิดพลาด */}
+      <AlertDialog open={openError} onOpenChange={setOpenError}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              An error occurred.
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              {errorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Agree</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <div className="min-h-screen bg-gray-50 dark:bg-black px-6">
+        {/* Header */}
+        <div className="bg-white rounded border dark:border-white-800 mt-6">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 dark:bg-black">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+                <Button variant="outline" size="icon" onClick={() => router.back()} className="flex-shrink-0 dark:bg-black border-slate-300 cursor-pointer">
+                  <ArrowLeft className="h-5 sm:h-6 w-5 sm:w-6 dark:text-white " />
+                </Button>
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white">
+                  Edit Job
+                </h1>
+              </div>
+
+              <Button
+                onClick={handleSaveClick}
+                disabled={loading}
+                className="bg-green-600 hover:bg-green-700 text-white font-medium px-6 sm:px-8 w-full sm:w-auto flex-shrink-0 cursor-pointer"
+              >
+                <Save className="mr-2 sm:mr-3 h-4 sm:h-5 w-4 sm:w-5" />
+                <span className="text-sm sm:text-base">{loading ? "Saving..." : "Save"}</span>
+              </Button>
             </div>
-            <Button type="submit" form="edit-form" 
-            className="flex-1 sm:flex-none bg-blue-600 hover:bg-green-600">
-              <Save className="h-4 w-4 mr-2" />
-              บันทึก
-            </Button>
           </div>
         </div>
 
-        <form id="edit-form" onSubmit={handleSubmit} className="space-y-6">
+        {/* Main Content */}
+        <div className="w-full px-0 py-6 sm:py-12">
+          <form onSubmit={(e) => { e.preventDefault(); handleSaveClick(); }} className="w-full">
+            <Card className="border-0 shadow-lg dark:bg-black border dark:border-white-800">
+              <CardContent className="p-4 sm:p-6 lg:p-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
 
-          {/* ข้อมูลโครงการ */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Project information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-
-              {/* Row 1 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Job Name <span className="text-red-500">*</span></Label>
-                  <Input
-                    value={formValues.jobName}
-                    onChange={e => handleChange("jobName", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Project Code</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                  {/* ข้อมูลหลัก */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Job Name <span className="text-red-600">*</span></Label>
                     <Input
-                      className=""
-                      value={formValues.jobCode}
-                      onChange={e => handleChange("jobCode", e.target.value)}
+                      value={job.jobName || ""}
+                      onChange={e => setJob({ ...job, jobName: e.target.value })}
+                      required
+                      className="text-sm sm:text-base  dark:bg-black"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Job No.</Label>
-                  <Input
-                    className=""
-                    value={formValues.jobNo}
-                    onChange={e => handleChange("jobNo", e.target.value)}
-                  />
-                </div>
-              </div>
 
-              {/* Row 2 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>CC No.</Label>
-                  <Input
-                    value={formValues.ccNo}
-                    onChange={e => handleChange("ccNo", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>WA Number</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Job Number</Label>
                     <Input
-                      className=""
-                      value={formValues.waNumber}
-                      onChange={e => handleChange("waNumber", e.target.value)}
+                      value={job.jobNo || ""}
+                      onChange={e => setJob({ ...job, jobNo: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>WR/PO/SR/RO Number</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      className=""
-                      value={formValues.wrPoSrRoNumber}
-                      onChange={e => handleChange("wrPoSrRoNumber", e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* Row 3 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Project Code</Label>
+                    <Input
+                      value={job.projectCode || ""}
+                      onChange={e => setJob({ ...job, projectCode: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Contact Person</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">CC No.</Label>
                     <Input
-                      className=""
-                      value={formValues.contactPerson}
-                      onChange={e => handleChange("contactPerson", e.target.value)}
+                      value={job.ccNo || ""}
+                      onChange={e => setJob({ ...job, ccNo: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Number</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Client</Label>
+                    <Select value={String(job.traderId || "")} onValueChange={v => setJob({ ...job, traderId: v })}>
+                      <SelectTrigger className="text-sm sm:text-base dark:bg-black w-full">
+                        <SelectValue placeholder="เลือก Trader" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {traders.map(t => (
+                          <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">WA Number</Label>
                     <Input
-                      placeholder=""
-                      value={formValues.contactNumber}
-                      onChange={e => handleChange("contactPerson", e.target.value)}
-                      className=""
+                      value={job.waNumber || ""}
+                      onChange={e => setJob({ ...job, waNumber: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Email</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">WR/PO/SR/RO Number</Label>
+                    <Input
+                      value={job.wrPoSrRoNumber || ""}
+                      onChange={e => setJob({ ...job, wrPoSrRoNumber: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Expteam Quotation</Label>
+                    <Input
+                      type="text"
+                      value={job.expteamQuotation || ""}
+                      onChange={e => setJob({ ...job, expteamQuotation: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Contact Person</Label>
+                    <Input
+                      value={job.contactPerson || ""}
+                      onChange={e => setJob({ ...job, contactPerson: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Contact Number</Label>
+                    <Input
+                      value={job.contactNumber || ""}
+                      onChange={e => setJob({ ...job, contactNumber: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Email</Label>
                     <Input
                       type="email"
-                      className=""
-                      value={formValues.contactEmail}
-                      onChange={e => handleChange("contactEmail", e.target.value)}
+                      value={job.contactEmail || ""}
+                      onChange={e => setJob({ ...job, contactEmail: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
                     />
                   </div>
-                </div>
-              </div>
 
-              {/* Row 4 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Trader <span className="text-red-500">*</span></Label>
-                  <TraderCombobox />
-                </div>
-                <div className="space-y-2">
-                  <Label>Expteam Quotation</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Estimated PR Cost</Label>
                     <Input
-                      className=""
-                      value={formValues.expteamQuotation}
-                      onChange={e => handleChange("expteamQuotation", e.target.value)}
+                      type="number"
+                      value={job.estimatedPrCost || ""}
+                      onChange={e => setJob({ ...job, estimatedPrCost: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Estimated PR Cost</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Start Date</Label>
                     <Input
-                      className=""
-                      value={formValues.estimatedPrCost}
-                      onChange={e => handleChange("estimatedPrCost", e.target.value)}
+                      type="date"
+                      value={job.startDate || ""}
+                      onChange={e => setJob({ ...job, startDate: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
                     />
                   </div>
-                </div>
-              </div>
 
-              {/* Row 5 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Start Date <span className="text-red-500">*</span></Label>
-                  <Input
-                    type="date"
-                    value={formValues.startDate}
-                    onChange={e => handleChange("startDate", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>End Date <span className="text-red-500">*</span></Label>
-                  <Input
-                    type="date"
-                    value={formValues.endDate}
-                    onChange={e => handleChange("endDate", e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">End Date</Label>
+                    <Input
+                      type="date"
+                      value={job.endDate || ""}
+                      onChange={e => setJob({ ...job, endDate: e.target.value })}
+                      className="text-sm sm:text-base dark:bg-black"
+                    />
+                  </div>
 
-              {/* Duration */}
-              <div className="flex items-center gap-2">
-                <Label>Period</Label>
-                <Badge variant="secondary" className="text-sm">
-                  <Clock className="h-4 w-4 mr-1" />
-                  {calculateDuration()} วัน
-                </Badge>
-              </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Status</Label>
+                    <Select value={job.status || "in_progress"} onValueChange={v => setJob({ ...job, status: v })}>
+                      <SelectTrigger className="text-sm sm:text-base dark:bg-black w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="in_progress">in_progress</SelectItem>
+                        <SelectItem value="completed">Complete</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label>status</Label>
-                <Select value={formValues.status} onValueChange={v => handleChange("status", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกสถานะ" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="in_progress">In progress</SelectItem>
-                    <SelectItem value="completed">Complete</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Description */}
-              <div className="space-y-2">
-                <Label>Remark</Label>
-                <Textarea
-                  rows={3}
-                  value={formValues.description}
-                  onChange={e => handleChange("description", e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* งบประมาณ */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                งบประมาณแต่ละส่วน
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {["Material", "Man Power", "OP", "IE", "Supply", "Engineer"].map((name) => {
-                  const key = name.toLowerCase().replace(" ", "") as keyof typeof formValues
-                  return (
-                    <div key={name} className="space-y-2 p-4 bg-slate-50 rounded-lg border">
-                      <Label className="font-medium">{name}</Label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600">฿</span>
+                  {/* งบประมาณ */}
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-4">
+                    <Label className="text-base sm:text-lg font-medium">งบประมาณ (บาท)</Label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm font-medium">Material</Label>
                         <Input
                           type="number"
-                          className="pl-8 h-10"
-                          value={formValues[key] || ""}
-                          onChange={e => handleChange(key, e.target.value)}
-                          placeholder="0.00"
+                          value={job.budgetMaterial || ""}
+                          onChange={e => setJob({ ...job, budgetMaterial: e.target.value })}
+                          className="text-xs sm:text-sm dark:bg-black"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm font-medium">ManPower</Label>
+                        <Input
+                          type="number"
+                          value={job.budgetManPower || ""}
+                          onChange={e => setJob({ ...job, budgetManPower: e.target.value })}
+                          className="text-xs sm:text-sm dark:bg-black"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm font-medium">OP</Label>
+                        <Input
+                          type="number"
+                          value={job.budgetOp || ""}
+                          onChange={e => setJob({ ...job, budgetOp: e.target.value })}
+                          className="text-xs sm:text-sm dark:bg-black"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm font-medium">IE</Label>
+                        <Input
+                          type="number"
+                          value={job.budgetIe || ""}
+                          onChange={e => setJob({ ...job, budgetIe: e.target.value })}
+                          className="text-xs sm:text-sm dark:bg-black"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm font-medium">Supply</Label>
+                        <Input
+                          type="number"
+                          value={job.budgetSupply || ""}
+                          onChange={e => setJob({ ...job, budgetSupply: e.target.value })}
+                          className="text-xs sm:text-sm dark:bg-black"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm font-medium">วิศวกร</Label>
+                        <Input
+                          type="number"
+                          value={job.budgetEngineer || ""}
+                          onChange={e => setJob({ ...job, budgetEngineer: e.target.value })}
+                          className="text-xs sm:text-sm dark:bg-black"
                         />
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </form>
+                  </div>
+
+                  {/* หมายเหตุ */}
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
+                    <Label className="text-sm font-medium">Remark</Label>
+                    <Textarea
+                      rows={5}
+                      value={job.remark || ""}
+                      onChange={e => setJob({ ...job, remark: e.target.value })}
+                      placeholder="ไม่มีหมายเหตุ"
+                      className="text-sm sm:text-base resize-none dark:bg-black"
+                    />
+                  </div>
+
+                </div>
+              </CardContent>
+            </Card>
+          </form>
+        </div>
       </div>
-    </div>
+    </>
   )
 }

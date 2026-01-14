@@ -10,57 +10,158 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useData } from "@/src/contexts/data-context"
-import { formatCurrency } from "@/src/lib/utils"
-import { addDays, differenceInDays } from "date-fns"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { ArrowLeft, Plus, Trash2, Save } from "lucide-react"
-import type { PurchaseRequisition, PurchaseOrder, POItem } from "@/src/types"
+import { addDays, differenceInDays } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
+import { formatCurrency } from "@/src/lib/utils"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
-// Helper แปลง number → string อย่างปลอดภัย
-const toStr = (val: string | number | null | undefined): string => String(val ?? "")
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
+
+interface PRItem {
+  description: string
+  quantity: number
+  unit?: string
+  unitPrice: number
+  totalPrice?: number
+}
+
+interface Job {
+  jobName: string
+  trader?: string
+  jobNo?: string
+  ccNo?: string
+  expteamQuotation?: string
+  estimatedPrCost?: number
+}
+
+interface PurchaseRequisition {
+  id: number
+  prNumber: string
+  jobNote?: string
+  extraCharge: boolean
+  requester: string
+  requestDate: string
+  requiredDate: string
+  duration: number
+  jobBalanceCost?: string
+  deliveryLocation: string
+  supplier?: string
+  planType: string,
+  supplierId?: number | null
+  currency: string
+  distcountType: string
+  distcountValue: string
+  remark?: string
+  vatPercent: number
+  discountPercent: number
+  grandTotal: number
+  status: string
+  items: PRItem[]
+  job?: Job
+  approvals: any[]
+}
+
+interface POItem {
+  id: string
+  itemNo: number
+  description: string
+  quantity: number
+  unit: string
+  unitPrice: number
+  totalPrice: number
+}
 
 export default function CreatePOPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { prs, addPO, pos, projects, traders, clients, suppliers } = useData()
 
-  const [selectedPRId, setSelectedPRId] = useState("")
-  const [selectedPR, setSelectedPR] = useState<PurchaseRequisition | null>(null)
-
-  const [traderId, setTraderId] = useState("")
-  const [supplierId, setSupplierId] = useState("")
-  const [supplierName, setSupplierName] = useState("")
+  const [prs, setPRs] = useState<PurchaseRequisition[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedPRId, setSelectedPRId] = useState<string>("")
+  const [projectName, setProjectName] = useState("")
+  const [requester, setRequester] = useState("")
+  const [department, setDepartment] = useState("")
+  const [traderName, setTraderName] = useState("")
+  const [jobNo, setJobNo] = useState("")
+  const [jobNote, setJobNote] = useState("")
+  const [extraCharge, setExtraCharge] = useState(false)
+  const [ccNo, setCcNo] = useState("")
+  const [expteamQuotation, setExpteamQuotation] = useState("")
+  const [jobBalanceCost, setJobBalanceCost] = useState("")
+  const [currency, setCurrency] = useState("")
+  const [distcountType, setDistcountType] = useState("")
+  const [distcountValue, setDistcountValue] = useState("")
+  const [estimatedPrCost, setEstimatedPrCost] = useState("")
   const [deliveryLocation, setDeliveryLocation] = useState("")
-  const [description, setDescription] = useState("")
+  const [planType, setPlanType] = useState("")
+  const [supplierName, setSupplierName] = useState("")
+  const [paymentTerms, setPaymentTerms] = useState("เครดิต 30 วัน")
+  const [vatRate, setVatRate] = useState(7)
+  const [serviceTaxRate, setServiceTaxRate] = useState(0)
+  const [remark, setRemark] = useState("")
   const [items, setItems] = useState<POItem[]>([])
-
   const today = new Date().toISOString().split("T")[0]
   const [orderDate] = useState(today)
   const [deliveryDate, setDeliveryDate] = useState("")
   const [durationDays, setDurationDays] = useState(0)
 
-  const [paymentTerms, setPaymentTerms] = useState("")
-  const [notes, setNotes] = useState("")
-  const [vatRate, setVatRate] = useState(7)
-  const [serviceTaxRate, setServiceTaxRate] = useState(0)
-  const [status, setStatus] = useState<"ร่าง" | "รออนุมัติ" | "อนุมัติแล้ว">("รออนุมัติ")
+  // สถานะ PO
+  const [status, setStatus] = useState<string>("pending") // default รออนุมัติ
 
-  const [projectInfo, setProjectInfo] = useState({
-    jobNumber: "",
-    traderName: "",
+  // Modal ยืนยัน
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+
+  const [formData, setFormData] = useState({
+    jobName: "",
+    jobNote: "",
+    extraCharge: false,
+    department: "",
+    supplier: "",
+    supplierName: "",
+    supplierId: 0,
+    requestedBy: "",
+    requestDate: new Date().toISOString().split("T")[0],
+    requiredDate: "",
+    duration: "",
+    trader: "",
+    jobNo: "",
     ccNo: "",
-    projectName: "",
+    currency: "",
+    paymentMethod: "",
+    paymentTerms: "",
+    remark: "",
+    deliveryLocation: "",
+    planType: "" as "PLAN" | "UNPLAN",
     expteamQuotation: "",
     estimatedPrCost: "",
-    jobBalanceCost: "0",
-    requestedBy: "",
-    department: "",
+    jobBalanceCost: "",
+    jobId: 0,
   })
 
-  const approvedPRs = prs.filter(pr => pr.status === "อนุมัติแล้ว" && !pr.deleted)
+  // ดึงข้อมูล PR
+  useEffect(() => {
+    const fetchPRs = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`${API_BASE_URL}/pr`)
+        if (!res.ok) throw new Error("โหลด PR ไม่สำเร็จ")
+        const data: PurchaseRequisition[] = await res.json()
+        setPRs(data)
+      } catch (err) {
+        toast({ title: "โหลดข้อมูลไม่สำเร็จ", variant: "destructive" })
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  // คำนวณจำนวนวันอัตโนมัติ
+    fetchPRs()
+  }, [toast])
+
+  const approvedPRs = prs.filter(pr => pr.status === "APPROVED")
+
+  // คำนวณจำนวนวัน
   useEffect(() => {
     if (orderDate && deliveryDate) {
       const days = differenceInDays(new Date(deliveryDate), new Date(orderDate))
@@ -68,7 +169,6 @@ export default function CreatePOPage() {
     }
   }, [orderDate, deliveryDate])
 
-  // แก้จำนวนวัน → ปรับวันที่ส่งของ
   const handleDurationChange = (days: number) => {
     setDurationDays(days)
     if (orderDate && days >= 0) {
@@ -77,122 +177,86 @@ export default function CreatePOPage() {
     }
   }
 
-  // เมื่อเลือก PR — ใช้ dependency แค่ selectedPRId เท่านั้น (warning หาย!)
   useEffect(() => {
     if (!selectedPRId || selectedPRId === "none") {
-      setSelectedPR(null)
-      setTraderId("")
-      setSupplierId("")
-      setSupplierName("")
+      setProjectName("")
+      setRequester("")
+      setDepartment("")
+      setTraderName("")
+      setJobNo("")
+      setJobNote("")
+      setExtraCharge(false)
+      setCcNo("")
+      setExpteamQuotation("")
+      setJobBalanceCost("")
+      setCurrency("")
+      setDistcountType("")
+      setDistcountValue("")
+      setEstimatedPrCost("")
       setDeliveryLocation("")
-      setDescription("")
-      setItems([])
-      setDeliveryDate("")
-      setDurationDays(0)
-      setPaymentTerms("")
-      setNotes("")
+      setPlanType("")
+      setSupplierName("")
+      setPaymentTerms("เครดิต 30 วัน")
       setVatRate(7)
       setServiceTaxRate(0)
-      setStatus("รออนุมัติ")
-      setProjectInfo({
-        jobNumber: "", traderName: "", ccNo: "", projectName: "", expteamQuotation: "",
-        estimatedPrCost: "", jobBalanceCost: "0", requestedBy: "", department: ""
-      })
+      setDeliveryDate("")
+      setDurationDays(0)
+      setItems([])
+      setRemark("")
+      setStatus("pending")
       return
     }
 
-    const pr = prs.find(p => p.id === selectedPRId)
+    const pr = prs.find(p => p.id.toString() === selectedPRId)
     if (!pr) return
-    setSelectedPR(pr)
 
-    setDescription(pr.projectName || pr.purpose || "")
+    setProjectName(pr.job?.jobName || "")
+    setRequester(pr.requester || "")
+    setDepartment("")
+    setTraderName(pr.job?.trader || "")
+    setJobNo(pr.job?.jobNo || "")
+    setJobNote(pr.jobNote || "")
+    setExtraCharge(pr.extraCharge)
+    setCcNo(pr.job?.ccNo || "")
+    setExpteamQuotation(pr.job?.expteamQuotation || "")
+    setJobBalanceCost(pr.jobBalanceCost || "")
+    setCurrency(pr.currency || "-")
+    setDistcountType(pr.distcountType || "-")
+    setDistcountValue(pr.distcountValue || "-")
+    setEstimatedPrCost(pr.job?.estimatedPrCost?.toString() || "")
     setDeliveryLocation(pr.deliveryLocation || "")
-    setNotes(pr.remark || "")
-    setVatRate(pr.vatRate || 7)
-    setServiceTaxRate(pr.serviceTaxRate || 0)
-    setPaymentTerms(pr.paymentTerms || "เครดิต 30 วัน")
-    if (pr.requiredDate) setDeliveryDate(pr.requiredDate)
+    setSupplierName(pr.supplier || "")
+    setPlanType(pr.planType || "-")
+    setVatRate(pr.vatPercent || 7)
+    setRemark(pr.remark || "")
+    setServiceTaxRate(pr.discountPercent || 0)
+    setPaymentTerms("เครดิต 30 วัน")
 
-    // Trader
-    if (pr.clientId) setTraderId(pr.clientId)
-    else if (pr.trader) setTraderId(pr.trader)
-
-    // Supplier
-    if (pr.supplier) {
-      setSupplierId(pr.supplier)
-      const sup = suppliers.find(s => s.id === pr.supplier)
-      setSupplierName(sup?.name || pr.supplierName || "")
+    if (pr.requiredDate) {
+      setDeliveryDate(pr.requiredDate)
+      const days = differenceInDays(new Date(pr.requiredDate), new Date(orderDate))
+      if (days >= 0) setDurationDays(days)
     }
 
-    // Project Info + Balance
-    let jobNo = pr.jobNo || ""
-    let ccNo = pr.ccNo || ""
-    let expteam = toStr(pr.expteamQuotation)
-    let estimated = toStr(pr.estimatedPrCost)
-
-    if (pr.projectId) {
-      const project = projects.find(p => p.id === pr.projectId)
-      if (project) {
-        jobNo = jobNo || project.jobNo || project.projectNumber || ""
-        ccNo = ccNo || project.ccNo || ""
-        expteam = expteam || toStr(project.expteamQuotation)
-        estimated = estimated || toStr(project.estimatedCost)
-
-        const totalPOAmount = pos
-          .filter(po => po.projectId === pr.projectId && po.status !== "ยกเลิก")
-          .reduce((sum, po) => sum + (po.totalAmount || 0), 0)
-        const totalBudget = Number(project.budget ?? project.estimatedCost ?? 0)
-        const balance = (totalBudget - totalPOAmount).toFixed(2)
-
-        setProjectInfo({
-          jobNumber: jobNo,
-          ccNo: ccNo,
-          projectName: pr.projectName || project.name || "",
-          traderName: pr.traderName || "",
-          expteamQuotation: expteam,
-          estimatedPrCost: estimated,
-          jobBalanceCost: balance,
-          requestedBy: pr.requestedBy || "",
-          department: pr.department || "",
-        })
-      }
-    } else {
-      setProjectInfo({
-        jobNumber: jobNo,
-        ccNo: ccNo,
-        projectName: pr.projectName || "",
-        traderName: pr.traderName || "",
-        expteamQuotation: expteam,
-        estimatedPrCost: estimated,
-        jobBalanceCost: "0",
-        requestedBy: pr.requestedBy || "",
-        department: pr.department || "",
-      })
-    }
-
-    // Items จาก PR
-    setItems(pr.items?.map((item, i) => ({
+    setItems(pr.items.map((item, i) => ({
       id: `po-item-${Date.now()}-${i}`,
       itemNo: i + 1,
-      description: item.description || "",
+      description: item.description.trim() || "รายการสินค้าจาก PR",
       quantity: item.quantity || 1,
-      unitPrice: item.estimatedPrice || 0,
-      estimatedPrice: item.estimatedPrice || 0,
       unit: item.unit || "ชิ้น",
-      totalPrice: (item.quantity || 1) * (item.estimatedPrice || 0),
-    })) || [])
-
-  }, [selectedPRId]) // ← แก้ตรงนี้แล้ว warning หายหมด!
+      unitPrice: item.unitPrice || 0,
+      totalPrice: (item.quantity || 1) * (item.unitPrice || 0),
+    })))
+  }, [selectedPRId, prs, orderDate])
 
   const addItem = () => {
     setItems(prev => [...prev, {
       id: `po-item-${Date.now()}`,
       itemNo: prev.length + 1,
-      description: "",
+      description: "รายการสินค้าใหม่",
       quantity: 1,
-      unitPrice: 0,
-      estimatedPrice: 0,
       unit: "ชิ้น",
+      unitPrice: 0,
       totalPrice: 0,
     }])
   }
@@ -204,13 +268,20 @@ export default function CreatePOPage() {
     })
   }
 
+  const updateForm = (field: keyof typeof formData, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
   const updateItem = (id: string, field: keyof POItem, value: any) => {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
-        const updated = { ...item, [field]: value }
+        let updatedValue = value;
+        if (field === "quantity" || field === "unitPrice") {
+          updatedValue = Number(value) || 0;
+        }
+        const updated = { ...item, [field]: updatedValue }
         if (field === "quantity" || field === "unitPrice") {
           updated.totalPrice = (updated.quantity || 0) * (updated.unitPrice || 0)
-          if (field === "unitPrice") updated.estimatedPrice = value
         }
         return updated
       }
@@ -218,119 +289,127 @@ export default function CreatePOPage() {
     }))
   }
 
-  const subtotal = items.reduce((sum, item) => sum + (item.totalPrice || 0), 0)
+  const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
   const vatAmount = (subtotal * vatRate) / 100
   const serviceTaxAmount = (subtotal * serviceTaxRate) / 100
-  const totalAmount = subtotal + vatAmount + serviceTaxAmount
+  const totalAmount = subtotal + vatAmount - serviceTaxAmount
 
-  const handleSubmit = (asDraft: boolean = false) => {
-    if (!asDraft) {
-      setStatus("รออนุมัติ")
-      if (!traderId || traderId === "none") return toast({ title: "กรุณาเลือก Trader", variant: "destructive" })
-      if (!supplierId || supplierId === "none") return toast({ title: "กรุณาเลือก Supplier", variant: "destructive" })
-      if (items.length === 0 || items.some(i => !i.description?.trim())) return toast({ title: "กรุณากรอกรายการสินค้าให้ครบ", variant: "destructive" })
-    } else {
-      setStatus("ร่าง")
+  const handleSave = () => {
+    if (items.length === 0) {
+      toast({ title: "กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ", variant: "destructive" })
+      return
+    }
+    if (items.some(item => !item.description.trim())) {
+      toast({ title: "กรุณากรอกรายการสินค้าให้ครบทุกบรรทัด", variant: "destructive" })
+      return
     }
 
-    if (Number(projectInfo.jobBalanceCost) < 0 && !asDraft) {
-      if (!window.confirm(`ยอดคงเหลือใน Job ติดลบ ${formatCurrency(projectInfo.jobBalanceCost)}\nยังต้องการสร้าง PO หรือไม่?`)) return
+    setShowConfirmModal(true)
+  }
+
+  const confirmSave = async () => {
+    try {
+      const payload = {
+        prId: selectedPRId !== "none" ? Number(selectedPRId) : null,
+        orderDate: orderDate,
+        deliveryDate: deliveryDate,
+        remark: remark || "",
+        paymentTerms: paymentTerms || "เครดิต 30 วัน",
+        items: items.map(item => ({
+          description: item.description.trim() || "รายการสินค้า",
+          quantity: Number(item.quantity) || 1,
+          unit: item.unit || "ชิ้น",
+          unitPrice: Number(item.unitPrice) || 0,
+        })),
+        // ส่ง status เป็นตัวเล็กตรงตาม enum
+        status: status, // "draft", "pending" ถูกต้องแล้ว ไม่ต้อง .toUpperCase()
+      }
+
+      const res = await fetch(`${API_BASE_URL}/po`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}))
+        throw new Error(Array.isArray(error.message) ? error.message.join(", ") : error.message || "บันทึก PO ไม่สำเร็จ")
+      }
+
+      toast({
+        title: "สร้าง PO สำเร็จ!",
+        description: "กลับไปหน้ารายการ PO",
+      })
+      router.push("/po")
+    } catch (err: any) {
+      toast({
+        title: "บันทึกไม่สำเร็จ",
+        description: err.message,
+        variant: "destructive",
+      })
+    } finally {
+      setShowConfirmModal(false)
     }
+  }
 
-    const poCount = pos.length + 1
-    const poNumber = `PO${new Date().getFullYear()}${String(poCount).padStart(4, "0")}`
-
-    const traderObj = clients.find(c => c.id === traderId) || traders.find(t => t.id === traderId)
-    const supplierObj = suppliers.find(s => s.id === supplierId)
-
-    const newPO: PurchaseOrder = {
-      id: `po-${Date.now()}`,
-      poNumber,
-      prId: selectedPRId !== "none" ? selectedPRId : "",
-      prNumber: selectedPR?.prNumber || "",
-      projectId: selectedPR?.projectId || "",
-      projectName: projectInfo.projectName || description,
-      jobNumber: projectInfo.jobNumber,
-      trader: traderId,
-      traderName: traderObj?.name || projectInfo.traderName || "",
-      supplier: supplierId,
-      supplierName: supplierObj?.name || supplierName || "",
-      ccNo: projectInfo.ccNo,
-      expteamQuotation: projectInfo.expteamQuotation || "",
-      estimatedPrCost: projectInfo.estimatedPrCost || "",
-      jobBalanceCost: Number(projectInfo.jobBalanceCost),
-      deliveryLocation,
-      orderDate,
-      deliveryDate: deliveryDate || orderDate,
-      status,
-      items,
-      description,
-      subtotal,
-      vatRate,
-      vatAmount,
-      serviceTaxRate,
-      serviceTaxAmount,
-      totalAmount,
-      paymentTerms: paymentTerms || "เครดิต 30 วัน",
-      remarks: notes,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      history: [],
-    }
-
-    addPO(newPO)
-    toast({
-      title: asDraft ? "บันทึกร่างสำเร็จ!" : "สร้าง PO สำเร็จ!",
-      description: `${poNumber} • สถานะ: ${status}`
-    })
-    router.push("/po")
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p>กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="w-full min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-      <div className="w-full px-4 md:px-6 lg:px-8 py-6 space-y-6">
+      <div className="w-full px-4 md:px-6 lg:px-8 py-6 space-y-6 dark:bg-black">
 
         {/* Header */}
-        <Card className="border-0 shadow-lg">
+        <Card className="border-0 shadow-lg border border-white-800 dark:bg-black">
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 curser-pointer">
                 <Link href="/po">
-                  <Button variant="ghost" size="icon" className="rounded-full">
+                  <Button variant="outline" size="icon" className="cursor-pointer hover:dark:bg-slate-700">
                     <ArrowLeft className="h-5 w-5" />
                   </Button>
                 </Link>
                 <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-slate-900">สร้าง PO ใหม่</h1>
-                  <p className="text-lg text-blue-600 font-medium">Purchase Order</p>
+                  <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Increase (PO)</h1>
+                  {/* <p className="text-lg text-slate-400 font-medium">Purchase Order</p> */}
                 </div>
               </div>
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => handleSubmit(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white">
-                  <Save className="h-4 w-4 mr-2" /> บันทึกร่าง
+                <Button variant="outline" onClick={() => { setStatus("draft"); handleSave(); }} className="bg-yellow-500 hover:bg-yellow-600 text-white dark:bg-yellow-600 hover:dark:bg-blue-700 cursor-pointer">
+                  <Save className="h-4 w-4 mr-2" /> Draft
                 </Button>
-                <Button onClick={() => handleSubmit(false)} className="bg-blue-600 hover:bg-green-600">
-                  <Save className="h-4 w-4 mr-2" /> สร้าง PO
+                <Button onClick={() => { setStatus("pending"); handleSave(); }} className="bg-blue-600 hover:bg-green-600 dark:text-white cursor-pointer">
+                  <Save className="h-4 w-4 mr-2" /> Save
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* เลือก PR */}
-        <Card>
+        {/* เลือก PR ที่อนุมัติแล้ว */}
+        <Card className="dark:bg-black">
           <CardHeader>
-            <CardTitle>เลือก PR ที่อนุมัติแล้ว</CardTitle>
-            <p className="text-sm text-muted-foreground">มี {approvedPRs.length} รายการ</p>
+            <CardTitle>PR Approved <span className="text-red-500">*</span></CardTitle>
+            {/* <p className="text-sm text-muted-foreground">มี {approvedPRs.length} รายการที่อนุมัติแล้ว</p> */}
           </CardHeader>
           <CardContent>
             <Select value={selectedPRId} onValueChange={setSelectedPRId}>
-              <SelectTrigger><SelectValue placeholder="กรุณาเลือก PR (หรือสร้างว่าง)" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select PR No." />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">-- สร้าง PO ว่าง --</SelectItem>
+                <SelectItem value="none"></SelectItem>
                 {approvedPRs.map(pr => (
-                  <SelectItem key={pr.id} value={pr.id}>
-                    {pr.prNumber} - {pr.projectName || pr.purpose}
+                  <SelectItem key={pr.id} value={pr.id.toString()}>
+                    {pr.prNumber}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -338,143 +417,219 @@ export default function CreatePOPage() {
           </CardContent>
         </Card>
 
-        {/* ฟอร์มหลัก */}
-        <Card>
+        {/* ฟอร์มหลัก - ครบทุกคอลัมน์เหมือนหน้า Edit */}
+        <Card className="dark:bg-black">
           <CardContent className="pt-6 space-y-8">
-
-            {/* Project Info */}
+            {/* Row 1 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Project Name</Label>
-                <Input value={projectInfo.projectName || ""} readOnly
-                  placeholder="Project Name" />
-              </div>
-              <div className="space-y-2">
-                <Label>Requester</Label>
-                <Input value={projectInfo.requestedBy || ""} readOnly
-                  placeholder="Requester" />
+                <Label>Project Name <span className="text-red-500">*</span></Label>
+                <Input value={projectName} readOnly placeholder="Project Name" className="bg-gray-50 dark:bg-black" />
               </div>
               <div className="space-y-2">
                 <Label>Department</Label>
-                <Input value={projectInfo.department || ""} readOnly
-                  placeholder="Department" />
+                <Input value={department || ""} readOnly placeholder="Department" className="bg-gray-50 dark:bg-black" />
+              </div>
+              <div className="space-y-2">
+                <Label>Requester</Label>
+                <Input value={requester || ""} readOnly placeholder="Requester" className="bg-gray-50 dark:bg-black" />
               </div>
             </div>
 
-            {/* วันที่ */}
+            {/* Row 2 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Order Date</Label>
-                <Input type="date" value={orderDate} readOnly />
+                <Label>Job Note</Label>
+                <Input value={jobNote || ""} readOnly placeholder="Job Note" className="bg-gray-50 dark:bg-black" />
+                {/* Extra charge checkbox */}
+                <div className="flex items-center space-x-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="extraCharge"
+                    checked={formData.extraCharge}
+                    onChange={e => updateForm("extraCharge", e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500
+                                 dark:bg-black dark:border-gray-600"
+                  />
+                  <Label
+                    htmlFor="extraCharge"
+                    className="text-sm dark:text-slate-200 cursor-pointer"
+                  >
+                    Extra charge
+                  </Label>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Request date <span className="text-red-500">*</span></Label>
+                <Input type="date" value={orderDate} readOnly className="bg-gray-50 dark:bg-black" />
               </div>
               <div className="space-y-2">
                 <Label>ROS date</Label>
-                <Input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Duration</Label>
-                <Input type="number" value={durationDays} onChange={e => handleDurationChange(Number(e.target.value) || 0)} />
+                <Input type="date" value={deliveryDate} readOnly onChange={e => setDeliveryDate(e.target.value)} className="bg-gray-50" />
               </div>
             </div>
 
-            {/* Trader + Job + CC */}
+            {/* Row 3 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Trader <span className="text-red-500">*</span></Label>
-                <Select value={traderId} onValueChange={setTraderId}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="เลือก Trader" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-- เลือก Trader --</SelectItem>
-                    {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name} (ลูกค้า)</SelectItem>)}
-                    {traders.map(t => <SelectItem key={t.id} value={t.id}>{t.name} (Trader)</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label>Client</Label>
+                <Input value={traderName} readOnly placeholder="Client" className="bg-gray-50 dark:bg-black" />
               </div>
               <div className="space-y-2">
                 <Label>Job No.</Label>
-                <Input value={projectInfo.jobNumber || ""} readOnly
-                  placeholder="Job No." />
+                <Input value={jobNo || ""} readOnly placeholder="Job No." className="bg-gray-50 dark:bg-black" />
               </div>
               <div className="space-y-2">
-                <Label>C.C No.</Label>
-                <Input value={projectInfo.ccNo || ""} readOnly
-                  placeholder="cc No." />
+                <Label>CC No.</Label>
+                <Input value={ccNo || ""} readOnly placeholder="CC No" className="bg-gray-50 dark:bg-black" />
               </div>
             </div>
 
-            {/* Expteam + Estimated + Balance */}
+            {/* Row 4 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <Label>Expteam Quotation</Label>
-                <Input value={projectInfo.expteamQuotation || ""} readOnly
-                  placeholder="Expteam Quotation" />
+                <Input value={expteamQuotation || ""} readOnly placeholder="Expteam Quotation" className="bg-gray-50 dark:bg-black" />
               </div>
               <div className="space-y-2">
                 <Label>Estimated PR Cost</Label>
-                <Input value={projectInfo.estimatedPrCost || ""} readOnly
-                  placeholder="Estimated PR Cost" />
+                <Input value={estimatedPrCost || ""} readOnly placeholder="Estimated PR Cost" className="bg-gray-50 dark:bg-black" />
               </div>
               <div className="space-y-2">
                 <Label>Job Balance Cost</Label>
-                <Input value={formatCurrency(projectInfo.jobBalanceCost)} readOnly />
+                <Input value={jobBalanceCost || ""} readOnly placeholder="Job Balance Cost" className="bg-gray-50 dark:bg-black" />
               </div>
             </div>
 
-            {/* Supplier + Status */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Row 5 - Supplier, Delivery Location, Status */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Supplier <span className="text-red-500">*</span></Label>
-                <Select value={supplierId} onValueChange={val => { setSupplierId(val); const s = suppliers.find(x => x.id === val); setSupplierName(s?.name || "") }}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="เลือก Supplier" /></SelectTrigger>
+                <Label>Supplier</Label>
+                <Input value={supplierName} readOnly placeholder="Supplier" className="bg-gray-50 dark:bg-black" />
+              </div>
+              <div className="space-y-2">
+                <Label>Currency <span className="text-red-500">*</span></Label>
+                <Input value={currency} readOnly placeholder="Currency" className="bg-gray-50 dark:bg-black" />
+              </div>
+              <div className="space-y-2">
+                <Label>Discount Type <span className="text-red-500">*</span></Label>
+                <Input value={distcountType || ""} readOnly placeholder="Discount Type" className="bg-gray-50 dark:bg-black" />
+              </div>
+              <div className="space-y-2">
+                <Label>Discount Value</Label>
+                <Input value={distcountValue || ""} readOnly placeholder="Discount Value" className="bg-gray-50 dark:bg-black" />
+              </div>
+              <div className="space-y-2">
+                <Label>Delivery Location <span className="text-red-500">*</span></Label>
+                <Input value={deliveryLocation || ""} onChange={e => setDeliveryLocation(e.target.value)} placeholder="Delivery Location" className="dark:bg-black bg-gray-50" />
+              </div>
+              {/* Plan / Unplan */}
+              <div className="space-y-2">
+                <Label className="dark:text-slate-200">Plan Type</Label>
+                <div className="flex items-center space-x-6 pt-1">
+                  {/* PLAN */}
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={planType === "PLAN"}
+                      onChange={() => updateForm("planType", "PLAN")}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm dark:text-slate-200">Plan</span>
+                  </label>
+
+                  {/* UNPLAN */}
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={planType === "UNPLAN"}
+                      onChange={() => updateForm("planType", "UNPLAN")}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm dark:text-slate-200">Unplan</span>
+                  </label>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger className="h-10 text-sm w-full dark:bg-black">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">-- เลือก Supplier --</SelectItem>
-                    {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="pending">Waiting for approved</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="reject">Reject</SelectItem>
+                    <SelectItem value="submitted">Submitted</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>สถานะ</Label>
-                <Select value={status} onValueChange={v => setStatus(v as any)}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ร่าง">ร่าง</SelectItem>
-                    <SelectItem value="รออนุมัติ">รออนุมัติ</SelectItem>
-                    <SelectItem value="อนุมัติแล้ว">อนุมัติแล้ว</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>
+                  Payment Method <span className="text-red-600">*</span>
+                </Label>
+
+                <div className="flex items-center space-x-6">
+                  {/* Radio Group */}
+                  <RadioGroup
+                    value={formData.paymentMethod}
+                    onValueChange={(value) =>
+                      updateForm("paymentMethod", value as "cash" | "credit")
+                    }
+                    className="flex items-center space-x-6"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="cash" id="payment-cash" />
+                      <Label htmlFor="payment-cash" className="font-normal cursor-pointer">
+                        Cash
+                      </Label>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="credit" id="payment-credit" />
+                      <Label htmlFor="payment-credit" className="font-normal cursor-pointer">
+                        Credit
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  {/* Payment Terms (แสดงเฉพาะ Credit) */}
+                  {formData.paymentMethod === "credit" && (
+                    <div className="flex items-center space-x-2">
+                      <Label className="whitespace-nowrap">Payment Terms</Label>
+                      <Input
+                        className="w-70 h-9"
+                        value={formData.paymentTerms}
+                        onChange={(e) =>
+                          updateForm("paymentTerms", e.target.value)
+                        }
+                        placeholder="30 days"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>รายละเอียด</Label>
-              <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} />
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label>สถานที่ส่งของ</Label>
-                <Input value={deliveryLocation} onChange={e => setDeliveryLocation(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>เงื่อนไขการชำระเงิน</Label>
-                <Input value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="เช่น เครดิต 30 วัน" />
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label>หมายเหตุ</Label>
-              <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} />
+            <div className="grid grid-cols-1 md:grid-cols-1 gap-6 ">
+              <div className="space-y-2 ">
+                <Label>Remark</Label>
+                <Textarea value={remark} rows={3} readOnly placeholder="Remark..." className="dark:bg-black bg-gray-50" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* รายการสินค้า */}
-        <Card>
+        <Card className="dark:bg-black">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle>รายการสินค้า</CardTitle>
-              <Button onClick={addItem} className="bg-blue-600 hover:bg-green-600">
-                <Plus className="h-4 w-4 mr-2" /> เพิ่มรายการ
+              <CardTitle>Product list</CardTitle>
+              <Button onClick={addItem} className="bg-blue-600 hover:bg-green-600 dark:text-white cursor-pointer">
+                <Plus className="h-4 w-4 mr-2" /> Add Product
               </Button>
             </div>
           </CardHeader>
@@ -483,28 +638,46 @@ export default function CreatePOPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-16">ลำดับ</TableHead>
-                    <TableHead>รายการ</TableHead>
-                    <TableHead className="w-24 text-center">จำนวน</TableHead>
-                    <TableHead className="w-24 text-center">หน่วย</TableHead>
-                    <TableHead className="w-32 text-right">ราคา/หน่วย</TableHead>
-                    <TableHead className="w-32 text-right">รวม</TableHead>
+                    <TableHead className="w-16">No.</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead className="w-24 text-center">Qty</TableHead>
+                    <TableHead className="w-24 text-center">UOM</TableHead>
+                    <TableHead className="w-32 text-right">Unit Price</TableHead>
+                    <TableHead className="w-32 text-right">Amount</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted/Alphaforegound">กรุณาเลือก PR หรือเพิ่มรายการสินค้า</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        กรุณาเลือก PR หรือเพิ่มรายการสินค้า
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     items.map(item => (
                       <TableRow key={item.id}>
                         <TableCell className="text-center">{item.itemNo}</TableCell>
-                        <TableCell><Input value={item.description} onChange={e => updateItem(item.id, "description", e.target.value)} /></TableCell>
-                        <TableCell><Input type="number" value={item.quantity} onChange={e => updateItem(item.id, "quantity", Number(e.target.value) || 0)} className="text-center" /></TableCell>
-                        <TableCell><Input value={item.unit} onChange={e => updateItem(item.id, "unit", e.target.value)} className="text-center" /></TableCell>
-                        <TableCell><Input type="number" value={item.unitPrice} onChange={e => updateItem(item.id, "unitPrice", Number(e.target.value) || 0)} className="text-right" /></TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(item.totalPrice)}</TableCell>
-                        <TableCell><Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>
+                        <TableCell>
+                          <Input value={item.description} onChange={e => updateItem(item.id, "description", e.target.value)} className="dark:bg-black" />
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" value={item.quantity} onChange={e => updateItem(item.id, "quantity", Number(e.target.value) || 0)} className="text-center dark:bg-black" />
+                        </TableCell>
+                        <TableCell>
+                          <Input value={item.unit} onChange={e => updateItem(item.id, "unit", e.target.value)} className="text-center dark:bg-black" />
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" value={item.unitPrice} onChange={e => updateItem(item.id, "unitPrice", Number(e.target.value) || 0)} className="text-right dark:bg-black" />
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(item.totalPrice)}
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="icon" onClick={() => removeItem(item.id)} className="cursor-pointer hover:dark:bg-red-400">
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
@@ -513,24 +686,45 @@ export default function CreatePOPage() {
             </div>
 
             {items.length > 0 && (
-              <div className="mt-6 pt-6 border-t text-right space-y-3">
-                <div className="flex justify-end gap-12 text-lg"><span className="font-medium">ยอดรวม</span><span className="font-bold w-40">{formatCurrency(subtotal)}</span></div>
-                <div className="flex justify-end gap-12 p-3 rounded-lg bg-blue-50">
+              <div className="mt-6 pt-6 border-t text-right space-y-3 ">
+                <div className="flex justify-end gap-12 p-3 rounded-lg bg-blue-50 dark:bg-black">
+                  <span className="font-medium">ยอดรวม</span>
+                  <span className="font-bold w-40">{formatCurrency(subtotal)}</span>
+                </div>
+                <div className="flex justify-end gap-12 p-3 rounded-lg bg-blue-50 dark:bg-black">
                   <span>VAT ({vatRate}%)</span>
-                  <span className="font-bold text-blue-700 w-40">{formatCurrency(vatAmount)}</span>
+                  <span className="font-bold text-white w-40">{formatCurrency(vatAmount)}</span>
                 </div>
-                <div className="flex justify-end gap-12 p-3 rounded-lg bg-purple-50">
-                  <span>Service Tax ({serviceTaxRate}%)</span>
-                  <span className="font-bold text-purple-700 w-40">{formatCurrency(serviceTaxAmount)}</span>
+                <div className="flex justify-end gap-12 p-3 rounded-lg bg-purple-50 dark:bg-black">
+                  <span>หัก ณ ที่จ่าย ({serviceTaxRate}%)</span>
+                  <span className="font-bold text-white w-40">{formatCurrency(serviceTaxAmount)}</span>
                 </div>
-                <div className="flex justify-end gap-12 pt-4 border-t text-2xl font-bold text-blue-600">
+                <div className="flex justify-end gap-12 pt-4 border-t text-2xl font-bold text-white">
                   <span>รวมทั้งสิ้น</span>
-                  <span className="w-40">{formatCurrency(totalAmount)}</span>
+                  <span className="w-40 dark:text-green-400">{formatCurrency(totalAmount)}</span>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
+
+        {/* Modal ยืนยัน */}
+        <AlertDialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>ยืนยันสร้าง PO</AlertDialogTitle>
+              <AlertDialogDescription>
+                คุณต้องการสร้าง PO ใหม่ด้วยสถานะ <strong>
+                  {status === "draft" ? "ร่าง" : status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}
+                </strong> หรือไม่?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmSave}>ยืนยัน</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   )

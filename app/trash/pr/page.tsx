@@ -3,243 +3,214 @@
 
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
-import { useData } from "@/src/contexts/data-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Eye, RotateCcw, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
-import { formatCurrency } from "@/src/lib/utils"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { format } from "date-fns"
+import { Search, ArrowLeftCircle, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
+
+interface PR {
+  id: number
+  prNumber: string
+  requester?: string
+  requestDate?: string
+  deletedAt?: string | null
+}
 
 export default function TrashPRPage() {
-  const { prs, restorePR, permanentlyDeletePR } = useData()
-
-  // กรองเฉพาะที่ถูกลบ
-  const deletedPRs = prs.filter(p => p.deleted)
+  const [prs, setPRs] = useState<PR[]>([])
+  const [loading, setLoading] = useState(true)
 
   const [searchTerm, setSearchTerm] = useState("")
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
-  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest")
 
-  const filteredAndSortedPRs = useMemo(() => {
-    let filtered = deletedPRs.filter((pr) => {
-      const matchesSearch =
-        pr.prNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pr.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (pr.department?.toLowerCase() || "").includes(searchTerm.toLowerCase())
-      return matchesSearch
-    })
+  useEffect(() => {
+    const fetchTrash = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`${API_BASE_URL}/pr/trash`) // หรือ /pr?deleted=true ถ้า backend ใช้ query
+        if (!res.ok) throw new Error("โหลดข้อมูลถังขยะไม่สำเร็จ")
+        const data: PR[] = await res.json()
+        setPRs(data)
+      } catch (err: any) {
+        alert(err.message || "เกิดข้อผิดพลาด")
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchTrash()
+  }, [])
 
-    filtered.sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0
-      return sortOrder === "latest" ? dateB - dateA : dateA - dateB
-    })
+  const filtered = useMemo(() => {
+    return prs.filter(pr => 
+      pr.prNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (pr.requester?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
+    )
+  }, [prs, searchTerm])
 
-    return filtered
-  }, [deletedPRs, searchTerm, sortOrder])
-
-  const totalItems = filteredAndSortedPRs.length
+  const totalItems = filtered.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = Math.min(startIndex + pageSize, totalItems)
-  const paginatedPRs = filteredAndSortedPRs.slice(startIndex, endIndex)
+  const paginated = filtered.slice(startIndex, endIndex)
 
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [searchTerm, sortOrder, pageSize])
-
-  const handleRestore = (id: string, number: string) => {
-    if (confirm(`กู้คืน PR ${number} หรือไม่?`)) {
-      restorePR(id)
-    }
-  }
-
-  const handlePermanentDelete = (id: string, number: string) => {
-    if (confirm(`ลบ PR ${number} ถาวรหรือไม่?`)) {
-      permanentlyDeletePR(id)
-    }
-  }
+  useEffect(() => setCurrentPage(1), [searchTerm, pageSize])
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) setCurrentPage(page)
   }
 
-  return (
-    <div className="space-y-4 md:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-            <Trash2 className="h-7 w-7 text-red-600" />
-            ถังขยะ - PR
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            PR ที่ถูกลบ ({deletedPRs.length} รายการ)
-          </p>
-        </div>
-        <Link href="/pr">
-          <Button variant="outline" className="w-full sm:w-auto">
-            <ChevronLeft className="mr-2 h-4 w-4" />
-            กลับสู่ PR
-          </Button>
-        </Link>
-      </div>
+  const handleRestore = async (id: number, prNumber: string) => {
+    if (!confirm(`กู้คืน PR "${prNumber}" หรือไม่?`)) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/pr/${id}/restore`, { method: "PATCH" })
+      if (!res.ok) throw new Error("กู้คืนไม่สำเร็จ")
+      setPRs(prev => prev.filter(p => p.id !== id))
+      alert("กู้คืนสำเร็จ")
+    } catch {
+      alert("เกิดข้อผิดพลาด")
+    }
+  }
 
-      {/* ตัวกรอง */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-            <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
-              <div className="relative flex-1 min-w-0">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="ค้นหา PR ที่ถูกลบ..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 w-full"
-                />
+  const handlePermanentDelete = async (id: number, prNumber: string) => {
+    if (!confirm(`ลบ PR "${prNumber}" ถาวรหรือไม่?`)) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/pr/${id}/force`, { method: "DELETE" })
+      if (!res.ok) throw new Error("ลบถาวรไม่สำเร็จ")
+      setPRs(prev => prev.filter(p => p.id !== id))
+      alert("ลบถาวรสำเร็จ")
+    } catch {
+      alert("เกิดข้อผิดพลาด")
+    }
+  }
+
+  if (loading) return <div className="flex justify-center py-20">กำลังโหลด...</div>
+
+  return (
+    <div className="min-h-screen space-y-6 py-8 px-4 bg-gray-50 dark:bg-black">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              <Trash2 className="h-8 w-8 text-red-600" />
+              ถังขยะ - Purchase Requests (PR)
+            </h1>
+            <p className="text-muted-foreground mt-2">{prs.length} รายการ</p>
+          </div>
+          <Link href="/pr">
+            <Button variant="outline">กลับสู่ PR</Button>
+          </Link>
+        </div>
+
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="ค้นหาเลขที่ PR..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
               </div>
-              <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "latest" | "oldest")}>
-                <SelectTrigger className="w-full sm:w-48">
+              <Select value={pageSize.toString()} onValueChange={v => setPageSize(Number(v))}>
+                <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="latest">ล่าสุดก่อน</SelectItem>
-                  <SelectItem value="oldest">เก่าก่อน</SelectItem>
+                  <SelectItem value="10">10 รายการ</SelectItem>
+                  <SelectItem value="20">20 รายการ</SelectItem>
+                  <SelectItem value="50">50 รายการ</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
-              <SelectTrigger className="w-full sm:w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5 รายการ</SelectItem>
-                <SelectItem value="10">10 รายการ</SelectItem>
-                <SelectItem value="20">20 รายการ</SelectItem>
-                <SelectItem value="50">50 รายการ</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* ตาราง */}
-      <Card>
-        <CardHeader><CardTitle>รายการ PR ที่ถูกลบ</CardTitle></CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-semibold">เลขที่ PR</th>
-                  <th className="text-left p-3 font-semibold hidden md:table-cell">ชื่อเรื่อง</th>
-                  <th className="text-left p-3 font-semibold hidden lg:table-cell">แผนก</th>
-                  <th className="text-right p-3 font-semibold hidden xl:table-cell">จำนวนเงิน</th>
-                  <th className="text-center p-3 font-semibold hidden lg:table-cell">วันที่สร้าง</th>
-                  <th className="text-right p-3 font-semibold">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedPRs.map((pr) => (
-                  <tr key={pr.id} className="border-b hover:bg-red-50/30 transition-colors">
-                    <td className="p-3">
-                      <div className="font-medium text-foreground">{pr.prNumber}</div>
-                      <div className="text-xs text-muted-foreground md:hidden">{pr.title}</div>
-                    </td>
-                    <td className="p-3 hidden md:table-cell"><div className="font-medium">{pr.title}</div></td>
-                    <td className="p-3 hidden lg:table-cell">{pr.department || "-"}</td>
-                    <td className="p-3 text-right hidden xl:table-cell">
-                      <div className="font-semibold text-foreground">{formatCurrency(pr.totalAmount || 0)}</div>
-                    </td>
-                    <td className="p-3 text-center hidden lg:table-cell text-sm">
-                      {pr.createdAt ? new Date(pr.createdAt).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) : "-"}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex justify-end gap-1">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Link href={`/pr/${pr.id}`}>
-                                <Button variant="outline" size="sm" className="text-blue-600 hover:bg-blue-50">
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                            </TooltipTrigger>
-                            <TooltipContent>ดูรายละเอียด</TooltipContent>
-                          </Tooltip>
-
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-green-600 hover:bg-green-50"
-                                onClick={() => handleRestore(pr.id, pr.prNumber)}
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>กู้คืน</TooltipContent>
-                          </Tooltip>
-
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-600 hover:bg-red-50"
-                                onClick={() => handlePermanentDelete(pr.id, pr.prNumber)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>ลบถาวร</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {totalItems > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-              <div className="text-sm text-muted-foreground">แสดง {startIndex + 1}-{endIndex} จาก {totalItems} รายการ</div>
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4" /></Button>
-                <div className="flex gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const pageNum = i + 1
-                    return <Button key={pageNum} variant={currentPage === pageNum ? "default" : "outline"} size="sm" className="w-9" onClick={() => goToPage(pageNum)}>{pageNum}</Button>
-                  })}
-                  {totalPages > 5 && (
-                    <>
-                      <span className="px-2 text-sm text-muted-foreground">...</span>
-                      <Button variant={currentPage === totalPages ? "default" : "outline"} size="sm" className="w-9" onClick={() => goToPage(totalPages)}>{totalPages}</Button>
-                    </>
-                  )}
-                </div>
-                <Button variant="outline" size="icon" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}><ChevronRight className="h-4 w-4" /></Button>
+        <Card>
+          <CardHeader>
+            <CardTitle>รายการ PR ที่ถูกลบ ({totalItems} รายการ)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {paginated.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground">
+                <Trash2 className="h-16 w-16 mx-auto mb-4 opacity-40" />
+                <p className="text-lg">ถังขยะว่างเปล่า</p>
               </div>
-            </div>
-          )}
+            ) : (
+              <TooltipProvider>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>No.</TableHead>
+                        <TableHead>เลขที่ PR</TableHead>
+                        <TableHead className="hidden md:table-cell">ผู้ขอ</TableHead>
+                        <TableHead className="hidden lg:table-cell">วันที่ขอ</TableHead>
+                        <TableHead className="text-center">จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginated.map(pr => (
+                        <TableRow key={pr.id}>
+                          <TableCell>{pr.id}</TableCell>
+                          <TableCell className="font-medium">{pr.prNumber}</TableCell>
+                          <TableCell className="hidden md:table-cell">{pr.requester || "-"}</TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {pr.requestDate ? new Date(pr.requestDate).toLocaleDateString("th-TH") : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-center gap-2">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="outline" size="icon" className="text-green-600" onClick={() => handleRestore(pr.id, pr.prNumber)}>
+                                    <ArrowLeftCircle className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>กู้คืน</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="outline" size="icon" className="text-red-600" onClick={() => handlePermanentDelete(pr.id, pr.prNumber)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>ลบถาวร</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TooltipProvider>
+            )}
 
-          {deletedPRs.length === 0 && (
-            <div className="text-center py-12">
-              <Trash2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium text-muted-foreground">ไม่มี PR ในถังขยะ</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {totalItems > 0 && (
+              <div className="mt-8 flex justify-between items-center">
+                <p className="text-sm text-muted-foreground">
+                  แสดง {startIndex + 1}-{endIndex} จาก {totalItems}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="icon" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="icon" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

@@ -11,10 +11,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useData } from "@/src/contexts/data-context"
-import { formatCurrency } from "@/src/lib/utils"
-import { ArrowLeft, Plus, Trash2, Save, Building2, Briefcase, CreditCard, Check, ChevronsUpDown } from "lucide-react"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { ArrowLeft, Plus, Trash2, Save, Check, ChevronsUpDown, Building2 } from "lucide-react"
+import { format, parseISO, isValid } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
+import { formatCurrency } from "@/src/lib/utils"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { cn } from "@/lib/utils"
 import {
   Combobox,
   ComboboxButton,
@@ -22,199 +25,186 @@ import {
   ComboboxOption,
   ComboboxOptions,
 } from "@headlessui/react"
-import { cn } from "@/lib/utils"
-import { addDays, differenceInDays } from "date-fns"
-import { Department } from "@/app/lib/types"
-import { getDepartments } from "@/app/lib/storage"
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
+
+interface Supplier {
+  id: number
+  companyName: string
+  isActive: boolean
+}
+
+interface WR {
+  id: number
+  wrNumber: string
+  jobNote: string
+  requester: string
+  extraCharge: boolean
+  tax: string
+  requestDate: string
+  requiredDate: string
+  deliveryLocation?: string
+  planType: string
+  remark?: string
+  status: string
+  job?: {
+    jobName: string
+    trader?: string
+    jobNo?: string
+    ccNo?: string
+    expteamQuotation?: string
+    estimatedPrCost?: number
+    jobBalanceCost?: string
+  }
+  items: {
+    description: string
+    quantity: number
+    unit?: string
+    unitPrice: number
+  }[]
+}
 
 interface WOItem {
   id: string
   itemNo: number
   description: string
   quantity: number
-  unitPrice: number
   unit: string
+  unitPrice: number
   totalPrice: number
 }
 
 export default function CreateWOPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { wrs, addWO, wos, projects, clients, traders, suppliers } = useData()
 
-  const [selectedWRId, setSelectedWRId] = useState("none")
-  const [selectedWR, setSelectedWR] = useState<any>(null)
+  const [wrs, setWRs] = useState<WR[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedWRId, setSelectedWRId] = useState<string>("none")
 
-  const [formData, setFormData] = useState({
-    title: "",
-    assignedTo: "",
-    department: "",
-    requestedBy: "",
-    deliveryLocation: "",
-    description: "",
-    deliveryDate: "",
-    paymentTerms: "เครดิต 30 วัน",
-    notes: "",
-    traderId: "",
-    traderName: "",
-    jobNumber: "",
-    ccNo: "",
-    projectName: "",
-    expteamQuotation: "",
-    estimatedPrCost: "",
-  })
+  // Supplier state
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  const [supplierQuery, setSupplierQuery] = useState("")
 
+  const [projectName, setProjectName] = useState("")
+  const [requester, setRequester] = useState("")
+  const [department, setDepartment] = useState("")
+  const [jobNote, setJobNote] = useState("")
+  const [extraCharge, setExtraCharge] = useState(false)
+  const [traderName, setTraderName] = useState("")
+  const [jobNo, setJobNo] = useState("")
+  const [ccNo, setCcNo] = useState("")
+  const [expteamQuotation, setExpteamQuotation] = useState("")
+  const [estimatedPrCost, setEstimatedPrCost] = useState("")
+  const [jobBalanceCost, setJobBalanceCost] = useState("")
+  const [deliveryLocation, setDeliveryLocation] = useState("")
+  const [remark, setRemark] = useState("")
+  const [currency, setCurrency] = useState("THB")
+  const [discountType, setDiscountType] = useState("")
+  const [discountValue, setDiscountValue] = useState("")
+  const [paymentTerms, setPaymentTerms] = useState("ภายใน 30 วัน")
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "credit" | "">("")
   const [items, setItems] = useState<WOItem[]>([])
-  const [vatRate, setVatRate] = useState(7)
-  const [serviceTaxRate, setServiceTaxRate] = useState(0)
-  const [status, setStatus] = useState<"ร่าง" | "รออนุมัติ" | "อนุมัติแล้ว">("ร่าง")
-  const [supplierId, setSupplierId] = useState("")
-  const [supplierName, setSupplierName] = useState("")
+  const [orderDate, setOrderDate] = useState(new Date())
+  const [deliveryDate, setDeliveryDate] = useState<Date | null>(null)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [saveMode, setSaveMode] = useState<"draft" | "pending" | "approved" | "submitted" | "complete">("pending")
+  const [tax, setTax] = useState("")
+  const [planType, setPlanType] = useState("")
+  const [status, setStatus] = useState<string>("pending")
 
-
-  // วันที่ + จำนวนวัน
-  const today = new Date().toISOString().split("T")[0]
-  const [orderDate] = useState(today) // วันที่สั่งซื้อ (วันนี้)
-  const [deliveryDate, setDeliveryDate] = useState("")
-  const [durationDays, setDurationDays] = useState(0)
-
-  const employees = [
-    { id: 1, name: "สมชาย" },
-    { id: 2, name: "สมนึก" },
-    { id: 3, name: "สมหญิง" },
-  ]
-
-  const approvedWRs = wrs.filter(wr => wr.status === "อนุมัติแล้ว" && !wr.deleted)
-
+  // ดึงข้อมูล
   useEffect(() => {
-    if (orderDate && deliveryDate) {
-      const days = differenceInDays(new Date(deliveryDate), new Date(orderDate))
-      if (days >= 0) setDurationDays(days)
-    }
-  }, [orderDate, deliveryDate])
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        const [wrRes, supplierRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/wr`),
+          fetch(`${API_BASE_URL}/suppliers`),
+        ])
 
-  // เมื่อแก้จำนวนวัน → คำนวณวันที่ต้องการรับของใหม่
-  const handleDurationChange = (days: number) => {
-    setDurationDays(days)
-    if (orderDate) {
-      const newDate = addDays(new Date(orderDate), days)
-      setDeliveryDate(newDate.toISOString().split("T")[0])
+        if (wrRes.ok) setWRs(await wrRes.json())
+        if (supplierRes.ok) setSuppliers(await supplierRes.json())
+      } catch (err) {
+        toast({ title: "โหลดข้อมูลไม่สำเร็จ", variant: "destructive" })
+      } finally {
+        setLoading(false)
+      }
     }
-  }
-  // ดึงข้อมูลจาก WR
+    fetchData()
+  }, [toast])
+  const approvedPRs = wrs.filter(wr => wr.status === "APPROVED")
+
+  const approvedWRs = useMemo(() => wrs.filter(wr => wr.status.toLowerCase() === "approved"), [wrs])
+
+  const filteredSuppliers = useMemo(() => {
+    const active = suppliers.filter(s => s.isActive)
+    if (!supplierQuery.trim()) return active
+    return active.filter(s => s.companyName.toLowerCase().includes(supplierQuery.toLowerCase()))
+  }, [suppliers, supplierQuery])
+
+  // เมื่อเลือก WR → ดึงข้อมูลมาใส่ฟอร์ม
   useEffect(() => {
-    if (selectedWRId && selectedWRId !== "none") {
-      const wr = wrs.find(w => w.id === selectedWRId)
-      if (!wr) return
-
-      setSelectedWR(wr)
-      if (wr.requiredDate) setDeliveryDate(wr.requiredDate)
-
-      // ดึง Trader
-      let traderId = ""
-      let traderName = ""
-      if (wr.clientId) {
-        const client = clients.find(c => c.id === wr.clientId)
-        traderId = wr.clientId
-        traderName = client?.name || ""
-      } else if (wr.projectId) {
-        const project = projects.find(p => p.id === wr.projectId)
-        if (project?.trader) {
-          const trader = traders.find(t => t.id === project.trader)
-          traderId = project.trader
-          traderName = trader?.name || ""
-        }
-      }
-
-      // ดึงข้อมูลโปรเจกต์
-      let jobNumber = "", ccNo = "", projectName = ""
-      if (wr.projectId) {
-        const project = projects.find(p => p.id === wr.projectId)
-        if (project) {
-          jobNumber = project.jobNo || project.projectNumber || ""
-          ccNo = project.ccNo || ""
-          projectName = project.name || ""
-        }
-      }
-
-      let finalSupplierId = "", finalSupplierName = ""
-      if (wr.supplier) {
-        const supplier = suppliers.find(s => s.id === wr.supplier)
-        finalSupplierId = wr.supplier
-        finalSupplierName = supplier?.name || wr.supplierName || wr.supplier
-      }
-      if (finalSupplierId) {
-        setSupplierId(finalSupplierId)
-        setSupplierName(finalSupplierName)
-      }
-
-      setFormData({
-        title: wr.projectName || wr.purpose || "",
-        assignedTo: "",
-        department: wr.department || "",
-        requestedBy: wr.requestedBy || "",
-        deliveryLocation: wr.deliveryLocation || "",
-        description: wr.remark || "",
-        deliveryDate: wr.requiredDate || "",
-        paymentTerms: "เครดิต 30 วัน",
-        notes: wr.remark || "",
-        traderId,
-        traderName,
-        jobNumber: jobNumber || wr.jobNumber || "",
-        ccNo: ccNo || wr.ccNo || "",
-        projectName: projectName || wr.projectName || "",
-        expteamQuotation: wr.expteamQuotation || "",
-        estimatedPrCost: wr.estimatedPrCost || "",
-      })
-
-      setVatRate(wr.vatRate || 7)
-      setServiceTaxRate(wr.serviceTaxRate || 0)
-
-      setItems(wr.items?.map((item, i) => ({
-        id: `wo-item-${Date.now()}-${i}`,
-        itemNo: i + 1,
-        description: item.description || "",
-        quantity: item.quantity || 1,
-        unitPrice: item.estimatedPrice || 0,
-        unit: item.unit || "ชิ้น",
-        totalPrice: (item.quantity || 1) * (item.estimatedPrice || 0),
-      })) || [])
-
-    } else {
-      // Reset
-      setSelectedWR(null)
-      setSupplierId("")
-      setSupplierName("")
-      setDeliveryDate("")
-      setDurationDays(0)
-      setFormData({
-        title: "",
-        department: "",
-        requestedBy: "",
-        assignedTo: "",
-        deliveryLocation: "",
-        description: "",
-        deliveryDate: "",
-        paymentTerms: "เครดิต 30 วัน",
-        notes: "",
-        traderId: "",
-        traderName: "",
-        jobNumber: "",
-        ccNo: "",
-        projectName: "",
-        expteamQuotation: "",
-        estimatedPrCost: "",
-      })
+    if (selectedWRId === "none" || !selectedWRId) {
+      setProjectName("")
+      setRequester("")
+      setDepartment("")
+      setJobNote("")
+      setExtraCharge(false)
+      setTraderName("")
+      setJobNo("")
+      setCcNo("")
+      setExpteamQuotation("")
+      setEstimatedPrCost("")
+      setJobBalanceCost("")
+      setDeliveryLocation("")
+      setPlanType("")
+      setRemark("")
+      setTax("")
       setItems([])
-      setVatRate(7)
-      setServiceTaxRate(0)
-      setStatus("ร่าง")
+      setDeliveryDate(null)
+      setPaymentMethod("")
+      setPaymentTerms("ภายใน 30 วัน")
+      setSelectedSupplier(null)
+      setSupplierQuery("")
+      setStatus("pending")
+      return
     }
-  }, [selectedWRId, wrs, projects, clients, traders])
 
-  const updateForm = (field: keyof typeof formData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
+    const wr = wrs.find(w => w.id.toString() === selectedWRId)
+    if (!wr) return
+
+    setProjectName(wr.job?.jobName || "")
+    setRequester(wr.requester || "")
+    setJobNote(wr.jobNote || "")
+    setExtraCharge(wr.extraCharge)
+    setTraderName(wr.job?.trader || "")
+    setJobNo(wr.job?.jobNo || "")
+    setCcNo(wr.job?.ccNo || "")
+    setExpteamQuotation(wr.job?.expteamQuotation || "")
+    setEstimatedPrCost(wr.job?.estimatedPrCost?.toString() || "")
+    setJobBalanceCost(wr.job?.jobBalanceCost || "")
+    setDeliveryLocation(wr.deliveryLocation || "")
+    setPlanType(wr.planType || "-")
+    setRemark(wr.remark || "")
+    setTax(wr.tax || "")
+
+    if (wr.requiredDate) {
+      const parsed = parseISO(wr.requiredDate)
+      if (isValid(parsed)) setDeliveryDate(parsed)
+    }
+
+    setItems(wr.items.map((item, i) => ({
+      id: `wo-item-${Date.now()}-${i}`,
+      itemNo: i + 1,
+      description: item.description.trim() || "งานจาก WR",
+      quantity: item.quantity || 1,
+      unit: item.unit || "ชิ้น",
+      unitPrice: item.unitPrice || 0,
+      totalPrice: (item.quantity || 1) * (item.unitPrice || 0),
+    })))
+  }, [selectedWRId, wrs])
 
   const addItem = () => {
     setItems(prev => [...prev, {
@@ -222,8 +212,8 @@ export default function CreateWOPage() {
       itemNo: prev.length + 1,
       description: "",
       quantity: 1,
-      unitPrice: 0,
       unit: "ชิ้น",
+      unitPrice: 0,
       totalPrice: 0,
     }])
   }
@@ -238,476 +228,488 @@ export default function CreateWOPage() {
   const updateItem = (id: string, field: keyof WOItem, value: any) => {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
-        const updated = { ...item, [field]: value }
-        if (field === "quantity" || field === "unitPrice") {
-          updated.totalPrice = (updated.quantity || 0) * (updated.unitPrice || 0)
-        }
+        const updatedValue = (field === "quantity" || field === "unitPrice") ? Number(value) || 0 : value
+        const updated = { ...item, [field]: updatedValue }
+        updated.totalPrice = updated.quantity * updated.unitPrice
         return updated
       }
       return item
     }))
   }
 
-  const subtotal = items.reduce((sum, item) => sum + (item.totalPrice || 0), 0)
-  const vatAmount = (subtotal * vatRate) / 100
-  const serviceTaxAmount = (subtotal * serviceTaxRate) / 100
-  const totalAmount = subtotal + vatAmount + serviceTaxAmount
-  const jobBalanceCost = (parseFloat(formData.expteamQuotation) || 0) - (parseFloat(formData.estimatedPrCost) || 0)
+  const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
+  const vatAmount = subtotal * 0.07
+  const totalAmount = subtotal + vatAmount
 
-  const handleSubmit = () => {
-    if (!supplierId || supplierId === "none") return toast({ title: "กรุณาเลือก Supplier", variant: "destructive" })
-    if (selectedWRId === "none") {
-      toast({ title: "กรุณาเลือก WR", variant: "destructive" })
-      return
-    }
-    if (!formData.title.trim()) {
-      toast({ title: "กรุณากรอกชื่อคำสั่งงาน", variant: "destructive" })
-      return
-    }
-    if (items.length === 0 || items.some(i => !i.description?.trim())) {
-      toast({ title: "กรุณากรอกรายการงานให้ครบ", variant: "destructive" })
-      return
-    }
+  const handleSave = (mode: "draft" | "pending") => {
+    if (items.length === 0) return toast({ title: "กรุณาเพิ่มรายการงานอย่างน้อย 1 รายการ", variant: "destructive" })
+    if (items.some(i => !i.description.trim())) return toast({ title: "กรุณากรอกรายการงานให้ครบ", variant: "destructive" })
+    if (!selectedSupplier) return toast({ title: "กรุณาเลือก Supplier", variant: "destructive" })
 
-    const woCount = wos.filter(wo => !wo.deleted).length + 1
-    const woNumber = `WO${new Date().getFullYear()}${String(woCount).padStart(4, "0")}`
-    const supplierObj = suppliers.find(s => s.id === supplierId)
-
-    const newWO = {
-      id: `wo-${Date.now()}`,
-      orderNumber: woNumber,
-      workRequestId: selectedWRId,
-      wrNumber: selectedWR?.wrNumber || "",
-      projectId: selectedWR?.projectId || "",
-      projectName: formData.projectName || formData.title,
-      department: formData.department || "",
-      requestedBy: formData.requestedBy || "",
-      jobNumber: formData.jobNumber,
-      ccNo: formData.ccNo,
-      supplier: supplierId,
-      supplierName: supplierObj?.name || supplierName,
-      title: formData.title.trim(),
-      assignedTo: Number(formData.assignedTo),
-      totalCost: totalAmount,
-      status,
-      items,
-      description: formData.description,
-      deliveryLocation: formData.deliveryLocation,
-      orderDate,
-      deliveryDate,
-      paymentTerms: formData.paymentTerms,
-      notes: formData.notes,
-      subtotal,
-      vatRate,
-      vatAmount,
-      serviceTaxRate,
-      serviceTaxAmount,
-      totalAmount,
-      traderId: formData.traderId,
-      traderName: formData.traderName,
-      expteamQuotation: formData.expteamQuotation,
-      estimatedPrCost: formData.estimatedPrCost,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    addWO(newWO)
-    toast({
-      title: `สร้าง WO สำเร็จ! สถานะ: ${status}`,
-      description: woNumber
-    })
-    router.push("/wo")
+    setSaveMode(mode)
+    setShowConfirmModal(true)
   }
 
-  const [departments, setDepartments] = useState<Department[]>([])
-  useEffect(() => {
-    setDepartments(getDepartments())
-  }, [])
+  const confirmSave = async () => {
+    try {
+      const payload = {
+        wrId: selectedWRId !== "none" ? Number(selectedWRId) : null,
+        supplierId: selectedSupplier!.id,
+        supplierName: selectedSupplier!.companyName,
+        requester: requester.trim() || "ไม่ระบุ",
+        department: department.trim() || null,
+        orderDate: format(orderDate, "yyyy-MM-dd"),
+        deliveryDate: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
+        deliveryLocation: deliveryLocation?.trim() || null,
+        remark: remark?.trim() || null,
+        paymentTerms: paymentTerms?.trim() || "ภายใน 30 วัน",
+        paymentMethod: paymentMethod || null,
+        currency: currency,
+        tax: tax?.trim() || null,
+        status: saveMode,
+        items: items.map(i => ({
+          description: i.description.trim(),
+          quantity: i.quantity,
+          unit: i.unit?.trim() || "ชิ้น",
+          unitPrice: i.unitPrice,
+        })),
+      }
 
-  // Combobox สำหรับ Trader
-  function TraderCombobox() {
-    const [query, setQuery] = useState("")
-    const filtered = useMemo(() => {
-      if (!query.trim()) return clients.filter(c => c.status === "active")
-      return clients
-        .filter(c => c.status === "active")
-        .filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
-    }, [clients, query])
+      const res = await fetch(`${API_BASE_URL}/wo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
 
-    return (
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "สร้าง WO ไม่สำเร็จ")
+
+      toast({ title: "สร้าง WO สำเร็จ!" })
+      router.push("/wo")
+    } catch (err: any) {
+      toast({ title: "สร้าง WO ไม่สำเร็จ", description: err.message, variant: "destructive" })
+    } finally {
+      setShowConfirmModal(false)
+    }
+  }
+
+  // Supplier Combobox ที่สมบูรณ์และไม่ล้นหน้าจอ
+  const SupplierCombobox = () => (
+    <Combobox value={selectedSupplier} onChange={setSelectedSupplier} nullable>
       <div className="relative">
-        <Combobox
-          value={formData.traderId}
-          onChange={(v: string | null) => {
-            const selected = clients.find(c => c.id === v)
-            updateForm("traderId", v ?? "")
-            updateForm("traderName", selected?.name ?? "")
-          }}
-          nullable
-        >
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Building2 className="h-5 w-5 text-slate-400" />
-            </div>
-            <ComboboxInput
-              className={cn(
-                "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
-                "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all",
-                "placeholder:text-slate-400"
-              )}
-              displayValue={(id: string) => clients.find(c => c.id === id)?.name ?? formData.traderName}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="เลือก Trader"
-            />
-            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
-              <ChevronsUpDown className="h-4 w-4 text-slate-400" />
-            </ComboboxButton>
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <Building2 className="h-5 w-5 text-slate-400" />
+        </div>
+        <ComboboxInput
+          className={cn(
+            "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
+            "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+          )}
+          displayValue={(supplier: Supplier | null) => supplier?.companyName || ""}
+          onChange={(e) => setSupplierQuery(e.target.value)}
+          placeholder="--เลือก Supplier--"
+        />
+        <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
+          <ChevronsUpDown className="h-4 w-4 text-slate-400" />
+        </ComboboxButton>
+      </div>
+
+      <ComboboxOptions
+        className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5"
+        style={{ maxWidth: "100%" }}
+      >
+        {filteredSuppliers.length === 0 ? (
+          <div className="px-4 py-2 text-center text-slate-500">
+            {supplierQuery ? `ไม่พบ "${supplierQuery}"` : "ไม่มี Supplier ที่ใช้งานอยู่"}
           </div>
-          <ComboboxOptions className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-            {filtered.length === 0 ? (
-              <div className="px-4 py-2 text-slate-500">ไม่พบ Trader</div>
-            ) : (
-              filtered.map((client) => (
-                <ComboboxOption
-                  key={client.id}
-                  value={client.id}
-                  className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
-                >
-                  {({ selected, active }) => (
-                    <>
-                      <span className={cn("block truncate", selected && "font-medium")}>
-                        {client.name}
-                      </span>
-                      {selected && (
-                        <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
-                          <Check className="h-5 w-5" />
-                        </span>
-                      )}
-                    </>
+        ) : (
+          filteredSuppliers.map((supplier) => (
+            <ComboboxOption
+              key={supplier.id}
+              value={supplier}
+              className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
+            >
+              {({ selected, active }) => (
+                <>
+                  <span className={cn("block break-words pr-8", selected && "font-medium")}>
+                    {supplier.companyName}
+                  </span>
+                  {selected && (
+                    <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
+                      <Check className="h-5 w-5" />
+                    </span>
                   )}
-                </ComboboxOption>
-              ))
-            )}
-          </ComboboxOptions>
-        </Combobox>
+                </>
+              )}
+            </ComboboxOption>
+          ))
+        )}
+      </ComboboxOptions>
+    </Combobox>
+  )
+
+  if (loading) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="text-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p>กำลังโหลดข้อมูล WR...</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8 space-y-4 md:space-y-6 max-w-full">
-
-        {/* Header */}
-        <div className="bg-white rounded-2xl sm:rounded-3xl shadow-md hover:shadow-lg transition-all duration-300 p-4 sm:p-6 md:p-8 border border-slate-100">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
-            <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
+    <div className="min-h-screen w-full space-y-6 px-6">
+      {/* Header */}
+      <Card className="border-0 shadow-lg">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
               <Link href="/wo">
-                <Button variant="outline" size="sm" className="mt-3.5">
-                  <ArrowLeft className="h-4 w-4 mr-1 sm:mr-2" />
+                <Button variant="outline" size="icon" className="hover:dark:bg-slate-600 cursor-pointer">
+                  <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-900 truncate">Increase (WO)</h1>
-                <p className="text-xs sm:text-sm text-slate-600 line-clamp-1">ดึงข้อมูลจาก WR ที่อนุมัติแล้ว</p>
+              <div>
+                <h1 className="text-3xl font-bold">Increase WO</h1>
+                {/* <p className="text-sm font-medium text-slate-200">Work Order</p> */}
               </div>
             </div>
-            <div className="flex gap-2 w-full md:w-auto flex-wrap md:flex-nowrap">
-              <Button variant="outline"
-                onClick={() => { setStatus("ร่าง"); handleSubmit(); }}
-                className="flex-1 sm:flex-none bg-yellow-400 hover:bg-yellow-600 hover:text-white">
-                <Save className="h-4 w-4 mr-1 sm:mr-2" /> บันทึกร่าง
-              </Button>
+            <div className="flex gap-3">
               <Button
-                onClick={handleSubmit}
-                className="flex-1 sm:flex-none bg-blue-600 hover:bg-green-600">
-                บันทึก
+                variant="outline"
+                onClick={() => handleSave("draft")}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white dark:bg-yellow-600 hover:dark:bg-slate-600 cursor-pointer"
+              >
+                <Save className="h-4 w-4 mr-2" /> Draft
+              </Button>
+              <Button onClick={() => handleSave("pending")} className="bg-blue-600 hover:bg-green-600 cursor-pointer dark:text-white">
+                <Save className="h-4 w-4 mr-2" /> Save
               </Button>
             </div>
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* Select WR */}
-        <Card className="border-0 shadow-md rounded-2xl sm:rounded-3xl">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base sm:text-lg">กรุณาเลือก WR</CardTitle>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-2">
-              มี WR ที่อนุมัติแล้ว <span className="font-semibold text-blue-600">{approvedWRs.length}</span> รายการ
-            </p>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <Select value={selectedWRId} onValueChange={setSelectedWRId}>
-              <SelectTrigger className="h-10 text-sm"><SelectValue placeholder="เลือก WR ที่อนุมัติแล้ว" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none" >เลือก WR ที่อนุมัติแล้ว</SelectItem>
-                {approvedWRs.map(wr => (
-                  <SelectItem key={wr.id} value={wr.id}>
-                    {wr.wrNumber} - {wr.projectName || wr.purpose}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
+      {/* เลือก WR */}
+      <Card>
+        <CardHeader>
+          <CardTitle>WR Approved</CardTitle>
+          {/* <p className="text-sm text-muted-foreground">มี {approvedWRs.length} รายการที่อนุมัติแล้ว</p> */}
+        </CardHeader>
+        <CardContent>
+          <Select value={selectedWRId} onValueChange={setSelectedWRId}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="กรุณาเลือก WR ที่อนุมัติแล้ว" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">--Select Work Request--</SelectItem>
+              {approvedWRs.map(wr => (
+                <SelectItem key={wr.id} value={wr.id.toString()}>
+                  {wr.wrNumber}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
-        {/* Main Form - เหมือน PO */}
-        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6 space-y-6">
-          {/* Row 1 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* ฟอร์มข้อมูลหลัก */}
+      <Card>
+        <CardContent className="pt-6 space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
               <Label>Project Name</Label>
-              <Input value={formData.projectName} onChange={e => updateForm("projectName", e.target.value)} placeholder="Project Name" className="h-10 text-sm" />
-            </div>
-            <div className="space-y-2">
-              <Label>Department</Label>
-              <Select value={formData.department} onValueChange={(v) => updateForm("department", v)}>
-                <SelectTrigger className="h-10 text-sm w-full"><SelectValue placeholder="department" /></SelectTrigger>
-                <SelectContent>
-                  {departments.map(dept => (
-                    <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input value={projectName} readOnly className="bg-gray-50" />
             </div>
             <div className="space-y-2">
               <Label>Requester</Label>
-              <Input value={formData.requestedBy} onChange={e => updateForm("requestedBy", e.target.value)} placeholder="ชื่อ-สกุล" className="h-10 text-sm" />
+              <Input value={requester || ""} readOnly className="bg-gray-50" />
+            </div>
+            <div className="space-y-2">
+              <Label>Department</Label>
+              <Input value={department || ""} readOnly className="bg-gray-50" />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
-              <Label>วันที่สั่งซื้อ</Label>
-              <Input type="date" value={orderDate} readOnly />
+              <Label>Job Note</Label>
+              <Input value={jobNote || ""} readOnly className="bg-gray-50" />
+              <div className="flex items-center space-x-2 pt-1">
+                <input
+                  type="checkbox"
+                  checked={planType === "PLAN"}
+                  onChange={() => setPlanType("PLAN")}
+                  className="h-4 w-4"
+                />
+                <Label
+                  htmlFor="extraCharge"
+                  className="text-sm dark:text-slate-200 cursor-pointer"
+                >
+                  Extra charge
+                </Label>
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>วันที่ต้องการรับของ <span className="text-xs text-green-600"></span></Label>
-              <Input type="date"
-                value={deliveryDate}
-                onChange={e => setDeliveryDate(e.target.value)}
-                className="h-10" />
-            </div>
-            <div className="space-y-2">
-              <Label>Duration <span className="text-xs text-green-600"></span></Label>
+              <Label>Order Date</Label>
               <Input
-                type="number"
-                value={durationDays}
-                onChange={e => handleDurationChange(Number(e.target.value) || 0)}
-                className="h-10"
-                min="0"
+                type="date"
+                value={format(orderDate, "yyyy-MM-dd")}
+                onChange={(e) => e.target.value && setOrderDate(new Date(e.target.value))}
+                className="bg-gray-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Delivery Date</Label>
+              <Input
+                type="date"
+                value={deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : ""}
+                onChange={(e) => setDeliveryDate(e.target.value ? new Date(e.target.value) : null)}
+                className="bg-gray-50"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
-              <Label>Trader</Label>
-              <TraderCombobox />
+              <Label>Client</Label>
+              <Input value={traderName || ""} readOnly className="bg-gray-50" />
             </div>
             <div className="space-y-2">
               <Label>Job No.</Label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 h-10 flex items-center text-slate-400" />
-                <Input
-                  value={formData.jobNumber} readOnly
-                  className="h-10" />
-              </div>
+              <Input value={jobNo || ""} readOnly className="bg-gray-50" />
             </div>
             <div className="space-y-2">
-              <Label>C.C. No.</Label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 h-10 flex items-center text-slate-400" />
-                <Input
-                  value={formData.ccNo} readOnly
-                  className="h-10" />
-              </div>
+              <Label>CC No.</Label>
+              <Input value={ccNo || ""} readOnly className="bg-gray-50" />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
               <Label>Expteam Quotation</Label>
-              <Input
-                value={formData.expteamQuotation} readOnly
-                className="h-10" />
+              <Input value={expteamQuotation || ""} readOnly className="bg-gray-50" />
             </div>
             <div className="space-y-2">
               <Label>Estimated PR Cost</Label>
-              <Input
-                value={formData.estimatedPrCost} readOnly
-                className="h-10" />
+              <Input value={estimatedPrCost || ""} readOnly className="bg-gray-50" />
             </div>
             <div className="space-y-2">
               <Label>Job Balance Cost</Label>
-              <Input
-                value={jobBalanceCost >= 0 ? jobBalanceCost.toLocaleString() : "0"} readOnly
-                className="h-10" />
+              <Input value={jobBalanceCost || ""} readOnly className="bg-gray-50" />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2 ">
+              <Label>Supplier <span className="text-red-600">*</span></Label>
+              <SupplierCombobox />
+            </div>
             <div className="space-y-2">
-              <Label className="text-xs md:text-sm font-medium">Supplier (ผู้ขาย) <span className="text-red-500">*</span></Label>
-              <Select value={supplierId} onValueChange={(val) => {
-                setSupplierId(val)
-                const supplier = suppliers.find(s => s.id === val)
-                setSupplierName(supplier?.name || "")
-              }}>
-                <SelectTrigger className="h-10 text-xs sm:text-sm w-full">
-                  <SelectValue>
-                    {supplierId && supplierId !== "none"
-                      ? (suppliers.find(s => s.id === supplierId)?.name || "ไม่พบ Supplier")
-                      : "เลือก Supplier"}
-                  </SelectValue>
+              <Label>Currency <span className="text-red-600">*</span></Label>
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger className="w-full bg-gray-50">
+                  <SelectValue placeholder="เลือกสกุลเงิน" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">-- เลือก Supplier --</SelectItem>
-                  {suppliers.map(s => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="THB">THB</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="GBP">GBP</SelectItem>
+                  <SelectItem value="JPY">JPY</SelectItem>
+                  <SelectItem value="INR">INR</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 mt-1">
-              <Label>สถานะ</Label>
-              <Select value={status} onValueChange={v => setStatus(v as any)}>
-                <SelectTrigger className="h-10 text-sm w-full"><SelectValue /></SelectTrigger>
+            <div className="space-y-2">
+              <Label>Discount Type</Label>
+              <Input value={discountType || ""} readOnly className="bg-gray-50" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <Label>Discount Value</Label>
+              <Input value={discountValue || ""} readOnly className="bg-gray-50" />
+            </div>
+            <div className="space-y-2">
+              <Label>With Holding Tax</Label>
+              <Input value={tax || ""} readOnly className="bg-gray-50" />
+            </div>
+            <div className="space-y-2">
+              <Label>Delivery Location</Label>
+              <Input value={deliveryLocation || ""} readOnly className="bg-gray-50" />
+            </div>
+            {/* Plan / Unplan */}
+            <div className="space-y-2">
+              <Label className="dark:text-slate-200">Plan Type</Label>
+              <div className="flex items-center space-x-6 pt-1">
+                {/* PLAN */}
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={planType === "PLAN"}
+                    onChange={() => setPlanType("PLAN")}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm dark:text-slate-200">Plan</span>
+                </label>
+
+                {/* UNPLAN */}
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={planType === "UNPLAN"}
+                    onChange={() => setPlanType("UNPLAN")}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm dark:text-slate-200">Unplan</span>
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="h-10 text-sm w-full dark:bg-black">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ร่าง">ร่าง</SelectItem>
-                  <SelectItem value="รออนุมัติ">รออนุมัติ</SelectItem>
-                  <SelectItem value="อนุมัติแล้ว">อนุมัติแล้ว</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="pending">Waiting for approved</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="complete">Complete</SelectItem>
+                  <SelectItem value="submitted">Submitted</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            
+              <div className="space-y-2">
+                <Label>Payment Method <span className="text-red-600">*</span></Label>
+                <RadioGroup value={paymentMethod} onValueChange={v => setPaymentMethod(v as any)}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="cash" id="payment-cash" />
+                    <Label htmlFor="payment-cash" className="font-normal cursor-pointer">Cash </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="credit" id="payment-credit" />
+                    <Label htmlFor="payment-credit" className="font-normal cursor-pointer">Credit </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+              {paymentMethod === "credit" && (
+                <div className="space-y-2">
+                  <Label>Payment Terms</Label>
+                  <Input value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />
+                </div>
+              )}
           </div>
 
-          {/* Row 3 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-6">
             <div className="space-y-2">
-              <Label>สถานที่ส่งของ</Label>
-              <Input
-                value={formData.deliveryLocation}
-                onChange={e => updateForm("deliveryLocation", e.target.value)}
-                placeholder="สถานที่ส่งของ"
-                className="h-10 font-sm" />
-            </div>
-            <div className="space-y-2">
-              <Label>เงื่อนไขการชำระเงิน</Label>
-              <Input
-                value={formData.paymentTerms}
-                onChange={e => updateForm("paymentTerms", e.target.value)}
-                placeholder="เครดิต 30 วัน"
-                className="h-10 text-sm" />
+              <Label>Remark</Label>
+              <Textarea value={remark} onChange={e => setRemark(e.target.value)} rows={3} />
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="space-y-2">
-            <Label>Remark</Label>
-            <Textarea
-              value={formData.notes}
-              onChange={e => updateForm("notes", e.target.value)} rows={2}
-              className="text-sm resize-none" 
-              placeholder="หมายเหตุเพิ่มติม..."/>
-          </div>
-        </div>
-
-        {/* Items Table */}
-        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="font-bold text-lg">รายการงาน</h2>
-            <Button onClick={addItem} size="sm" className="flex-1 sm:flex-none bg-blue-600 hover:bg-green-600">
-              <Plus className="h-4 w-4 mr-1" /> เพิ่มรายการ
+      {/* รายการงาน */}
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>Product list</CardTitle>
+            <Button onClick={addItem} className="dark:bg-green-600 bg-green-600 text-white hover:dark:bg-slate-600 hover:bg-blue-600 cursor-pointer">
+              <Plus className="h-4 w-4 mr-2" /> Add Product
             </Button>
           </div>
-
+        </CardHeader>
+        <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">ลำดับ</TableHead>
-                  <TableHead>รายการ</TableHead>
-                  <TableHead className="w-20 text-center">จำนวน</TableHead>
-                  <TableHead className="w-28 text-right">ราคา/หน่วย</TableHead>
-                  <TableHead className="w-20 text-center">หน่วย</TableHead>
-                  <TableHead className="w-28 text-right">รวม</TableHead>
-                  <TableHead className="w-12"></TableHead>
+                  <TableHead className="text-center">No.</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-center">Qty</TableHead>
+                  <TableHead className="text-center">UOM</TableHead>
+                  <TableHead className="text-right">Unit Price</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map(item => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.itemNo}</TableCell>
-                    <TableCell>
-                      <Input value={item.description}
-                        onChange={e => updateItem(item.id, "description", e.target.value)}
-                        className="h-9 text-sm"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number"
-                        value={item.quantity}
-                        onChange={e => updateItem(item.id, "quantity", Number(e.target.value))}
-                        className="h-9 text-sm text-center"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number"
-                        value={item.unitPrice}
-                        onChange={e => updateItem(item.id, "unitPrice", Number(e.target.value))}
-                        className="h-9 text-sm text-right"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input value={item.unit}
-                        onChange={e => updateItem(item.id, "unit", e.target.value)}
-                        className="h-9 text-sm text-center"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(item.totalPrice)}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} disabled={items.length === 1}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                {items.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      ยังไม่มีรายการงาน
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="text-center">{item.itemNo}</TableCell>
+                      <TableCell>
+                        <Input value={item.description} onChange={e => updateItem(item.id, "description", e.target.value)} />
+                      </TableCell>
+                      <TableCell>
+                        <Input type="number" value={item.quantity} onChange={e => updateItem(item.id, "quantity", Number(e.target.value) || 0)} className="text-center" />
+                      </TableCell>
+                      <TableCell>
+                        <Input value={item.unit} onChange={e => updateItem(item.id, "unit", e.target.value)} className="text-center" />
+                      </TableCell>
+                      <TableCell>
+                        <Input type="number" value={item.unitPrice} onChange={e => updateItem(item.id, "unitPrice", Number(e.target.value) || 0)} className="text-right" />
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(item.totalPrice)}
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
-          </div>
 
-          {/* Summary */}
-          <div className="mt-6 border-t pt-4 space-y-2 text-right">
-            <div className="flex justify-end gap-8 items-center">
-              <span className="text-sm">ยอดรวม</span>
-              <span className="font-medium w-32">{formatCurrency(subtotal)}</span>
-            </div>
-            <div className="flex justify-end gap-8 items-center">
-              <span className="text-sm">VAT (%)</span>
-              <input
-                type="number"
-                value={vatRate}
-                onChange={e => setVatRate(Number(e.target.value) || 0)}
-                className="w-16 p-1 border rounded text-right text-sm" />
-              <span className="font-medium w-32">{formatCurrency(vatAmount)}</span>
-            </div>
-            <div className="flex justify-end gap-8 items-center">
-              <span className="text-sm">Service Tax (%)</span>
-              <input
-                type="number"
-                value={serviceTaxRate}
-                onChange={e => setServiceTaxRate(Number(e.target.value) || 0)}
-                className="w-16 p-1 border rounded text-right text-sm" />
-              <span className="font-medium w-32">{formatCurrency(serviceTaxAmount)}</span>
-            </div>
-            <div className="flex justify-end gap-8 items-center pt-2 border-t">
-              <span className="text-lg font-bold">รวมทั้งสิ้น</span>
-              <span className="text-xl font-bold text-blue-600 w-32">{formatCurrency(totalAmount)}</span>
-            </div>
+            {items.length > 0 && (
+              <div className="mt-8 pt-6 border-t text-right space-y-3">
+                <div className="flex justify-end gap-12 p-3">
+                  <span>Total</span>
+                  <span className="font-medium w-32">{formatCurrency(subtotal)}</span>
+                </div>
+                <div className="flex justify-end gap-12 p-3">
+                  <span>VAT (7.00%)</span>
+                  <span className="font-bold w-32">{formatCurrency(vatAmount)}</span>
+                </div>
+                <div className="flex justify-end gap-12 pt-4 border-t text-2xl font-bold">
+                  <span>total Amount</span>
+                  <span className="w-32 text-green-600">{formatCurrency(totalAmount)}</span>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
+
+      {/* Modal */}
+      <AlertDialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการบันทึก WO</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการบันทึก WO นี้ในสถานะ <strong>{saveMode === "draft" ? "ร่าง" : "รออนุมัติ"}</strong> หรือไม่?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSave}>ยืนยัน</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

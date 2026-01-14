@@ -95,7 +95,7 @@ export default function EmployeePositionPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="bg-white p-6 rounded shadow mb-6 max-w-md"
+        className="bg-white p-6 rounded shadow mb-6 max-w-md dark:bg-black border border-whites"
       >
         <h2 className="text-xl font-semibold mb-4">
           {editId ? 'แก้ไข' : 'เพิ่ม'} การมอบหมาย
@@ -107,9 +107,9 @@ export default function EmployeePositionPage() {
           className="w-full p-2 border mb-3 rounded"
           required
         >
-          <option value="">เลือกพนักงาน</option>
+          <option value="" className='dark:bg-black border border-whites'>เลือกพนักงาน</option>
           {employees.map((e) => (
-            <option key={e.id} value={e.id}>
+            <option key={e.id} value={e.id} className='dark:bg-black border border-whites'>
               {e.name}
             </option>
           ))}
@@ -121,9 +121,9 @@ export default function EmployeePositionPage() {
           className="w-full p-2 border mb-3 rounded"
           required
         >
-          <option value="">เลือกตำแหน่ง</option>
+          <option value="" className='dark:bg-black border border-whites'>เลือกตำแหน่ง</option>
           {positions.map((p) => (
-            <option key={p.id} value={p.id}>
+            <option key={p.id} value={p.id} className='dark:bg-black border border-whites'>
               {p.name}
             </option>
           ))}
@@ -162,9 +162,9 @@ export default function EmployeePositionPage() {
         </div>
       </form>
 
-      <div className="bg-white shadow rounded overflow-hidden">
+      <div className="bg-white shadow rounded overflow-hidden dark:bg-black border border-whites">
         <table className="w-full">
-          <thead className="bg-gray-100">
+          <thead className="bg-gray-100 dark:bg-black border border-whites">
             <tr>
               <th className="p-3 text-left">ID</th>
               <th className="p-3 text-left">พนักงาน</th>
@@ -177,7 +177,7 @@ export default function EmployeePositionPage() {
             {eps.map((ep) => (
               <tr
                 key={ep.id}
-                className="border-t hover:bg-gray-50 transition"
+                className="border-t hover:bg-gray-50 transition hover:dark:bg-slate-700"
               >
                 <td className="p-3">{ep.id}</td>
                 <td className="p-3">{getEmpName(ep.employeeId)}</td>

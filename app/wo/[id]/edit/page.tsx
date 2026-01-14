@@ -1,500 +1,591 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useData } from "@/src/contexts/data-context"
-import { formatCurrency } from "@/src/lib/utils"
-import { ArrowLeft, Plus, Trash2, Save, Building2 } from "lucide-react"
-import type { WorkRequisition, WorkOrder, WOItem, WOHistory } from "@/src/types"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { ArrowLeft, Save, Plus, Trash2 } from "lucide-react"
+import { addDays, differenceInDays, format, parseISO, isValid } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
-import React from "react"
+import { formatCurrency } from "@/src/lib/utils"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
-// Helper แปลง number → string
-const toStr = (val: string | number | null | undefined): string => String(val ?? "")
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
 
-export default function EditWOPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = React.use(params)
+interface WOItem {
+  description: string
+  quantity: number
+  unit?: string
+  unitPrice: number
+  totalPrice: number
+}
+
+interface Job {
+  jobName: string
+  trader?: string
+  jobNo?: string
+  ccNo?: string
+  expteamQuotation?: string
+  estimatedPrCost?: number
+}
+
+interface WOData {
+  id: number
+  extraCharge: boolean
+  woNumber: string
+  orderDate: string
+  deliveryDate?: string | null
+  deliveryLocation?: string
+  planType: "PLAN" | "UNPLAN"
+  supplier: string
+  currency: string
+  discountType: string
+  discountValue: string
+  remark?: string
+  paymentTerms?: string
+  status: string
+  requester: string
+  jobNote: string
+  job?: Job
+  items: WOItem[]
+}
+
+export default function WOEditPage() {
   const router = useRouter()
+  const params = useParams()
+  const id = params.id as string
   const { toast } = useToast()
-  const { getWO, updateWO, wrs, wos, projects, traders, clients, suppliers } = useData()
 
-  const wo = getWO(id)
-  if (!wo) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 p-4">
-        <h2 className="text-2xl font-bold mb-4 text-slate-900">ไม่พบข้อมูล Work Order</h2>
-        <Link href="/wo">
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white">กลับไปหน้ารายการ WO</Button>
-        </Link>
-      </div>
-    )
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [woData, setWOData] = useState<WOData | null>(null)
+  const [items, setItems] = useState<WOItem[]>([])
+  const [status, setStatus] = useState<string>("pending")
+  const [remark, setRemark] = useState("")
+  const [deliveryLocation, setDeliveryLocation] = useState("")
+  const [supplier, setSupplier] = useState("")
+  const [currency, setCurrency] = useState("")
+  const [discountType, setDiscountType] = useState("")
+  const [discountValue, setDiscountValue] = useState("")
+  const [deliveryDate, setDeliveryDate] = useState<Date | null>(null)
+  const [durationDays, setDurationDays] = useState(0)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "credit">("cash")
+  const [paymentTerms, setPaymentTerms] = useState("")
+  const [planType, setPlanType] = useState<"PLAN" | "UNPLAN">()
+
+
+  const parseBackendDate = (dateStr: string | null | undefined): Date | null => {
+    if (!dateStr) return null
+    const date = parseISO(dateStr)
+    return isValid(date) ? date : null
   }
 
-  // หา WR จาก wo.workRequestId (หรือ field ที่คุณใช้จริง)
-  const wr = wo.workRequestId ? wrs.find(w => w.id === wo.workRequestId) : null
-
-  const [traderId, setTraderId] = useState(wo.trader || "")
-  const [supplierId, setSupplierId] = useState(wo.supplier || "")
-  const [supplierName, setSupplierName] = useState(wo.supplierName || "")
-  const [deliveryLocation, setDeliveryLocation] = useState(wo.deliveryLocation || "")
-  const [description, setDescription] = useState(wo.description || "")
-  const [expteamQuotation, setExpteamQuotation] = useState(toStr(wo.expteamQuotation))
-  const [estimatedPrCost, setEstimatedPrCost] = useState(toStr(wo.estimatedPrCost))
-  const [items, setItems] = useState<WOItem[]>([])
-
-  const today = new Date().toISOString().split("T")[0]
-  const [orderDate] = useState(today)
-  const [deliveryDate, setDeliveryDate] = useState(wo.deliveryDate || "")
-  const [durationDays, setDurationDays] = useState(wo.durationDays || 0)
-
-  const [paymentTerms, setPaymentTerms] = useState(wo.paymentTerms || "")
-  const [notes, setNotes] = useState(wo.remarks || "")
-  const [vatRate, setVatRate] = useState(wo.vatRate || 7)
-  const [serviceTaxRate, setServiceTaxRate] = useState(wo.serviceTaxRate || 0)
-  const [status, setStatus] = useState<"ร่าง" | "รออนุมัติ" | "อนุมัติแล้ว">(wo.status || "ร่าง")
-
-  const [projectInfo, setProjectInfo] = useState({
-    jobNumber: "",
-    traderName: "",
-    ccNo: "",
-    projectName: "",
-    expteamQuotation: "",
-    estimatedPrCost: "",
-    jobBalanceCost: "0",
-    requestedBy: "",
-    department: "",
-  })
+  const formatDateDisplay = (date: Date | null): string => {
+    if (!date || !isValid(date)) return "-"
+    return format(date, "dd/MM/yyyy")
+  }
 
   useEffect(() => {
-    if (!wo) return
+    const fetchWO = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`${API_BASE_URL}/wo/${id}`)
+        if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ")
+        const data = await res.json()
 
-    setStatus(wo.status || "ร่าง")
+        setWOData(data)
+        setItems(data.items?.map((item: any, index: number) => ({
+          description: item.description || "",
+          quantity: item.quantity || 1,
+          unit: item.unit || "ชิ้น",
+          unitPrice: item.unitPrice || 0,
+          totalPrice: (item.quantity || 1) * (item.unitPrice || 0),
+        })) || [])
+        setStatus(data.status || "pending")
+        setRemark(data.remark || "")
+        setDeliveryLocation(data.deliveryLocation || "")
+        setDeliveryDate(parseBackendDate(data.deliveryDate))
 
-    if (wr) {
-      setTraderId(wr.traderId || wo.trader || "")
-      setSupplierId(wr.supplier || wo.supplier || "")
-      const supplierData = suppliers.find(s => s.id === (wr.supplier || wo.supplier))
-      setSupplierName(supplierData?.name || wr.supplierName || wo.supplierName || "")
-      setDeliveryLocation(wr.deliveryLocation || wo.deliveryLocation || "")
-      setDeliveryDate(wr.requiredDate || wo.deliveryDate || "")
-      setDurationDays(Number(wr.duration) || wo.durationDays || 0)
-      setPaymentTerms(wo.paymentTerms || "")
-      setNotes(wo.remarks || "")
-      setVatRate(wo.vatRate || 7)
-      setServiceTaxRate(wo.serviceTaxRate || 0)
-      setDescription(wo.description || "")
-      setExpteamQuotation(toStr(wo.expteamQuotation || wr.expteamQuotation))
-      setEstimatedPrCost(toStr(wo.estimatedPrCost || wr.estimatedPrCost))
-
-      const projectId = wr.projectId || wo.projectId
-      if (projectId) {
-        const project = projects.find(p => p.id === projectId)
-        if (project) {
-          const totalWOAmount = wos
-            .filter(w => w.projectId === projectId && w.status !== "ยกเลิก")
-            .reduce((sum, w) => sum + (w.totalAmount || 0), 0)
-          const totalBudget = Number(project.budget ?? project.estimatedCost ?? 0)
-          const balance = (totalBudget - totalWOAmount).toFixed(2)
-
-          setProjectInfo({
-            jobNumber: wr.jobNo || project.jobNo || project.projectNumber || wo.jobNumber || "",
-            ccNo: wr.ccNo || project.ccNo || wo.ccNo || "",
-            projectName: wr.projectName || project.name || wo.projectName || "",
-            traderName: wr.traderName || wo.traderName || "",
-            expteamQuotation: toStr(wr.expteamQuotation || project.expteamQuotation),
-            estimatedPrCost: toStr(wr.estimatedPrCost || project.estimatedCost),
-            jobBalanceCost: balance,
-            requestedBy: wr.requestedBy || "",
-            department: wr.department || "",
-          })
+        const order = parseBackendDate(data.orderDate)
+        const delivery = parseBackendDate(data.deliveryDate)
+        if (order && delivery) {
+          const days = differenceInDays(delivery, order)
+          if (days >= 0) setDurationDays(days)
         }
-      }
-    } else {
-      if (wo.projectId) {
-        const project = projects.find(p => p.id === wo.projectId)
-        if (project) {
-          const totalWOAmount = wos
-            .filter(w => w.projectId === wo.projectId && w.status !== "ยกเลิก")
-            .reduce((sum, w) => sum + (w.totalAmount || 0), 0)
-          const totalBudget = Number(project.budget ?? project.estimatedCost ?? 0)
-          const balance = (totalBudget - totalWOAmount).toFixed(2)
-
-          setProjectInfo({
-            jobNumber: wo.jobNo || project.jobNo || project.projectNumber || "",
-            ccNo: wo.ccNo || project.ccNo || "",
-            projectName: wo.projectName || project.name || "",
-            traderName: wo.traderName || "",
-            expteamQuotation: toStr(wo.expteamQuotation || project.expteamQuotation),
-            estimatedPrCost: toStr(wo.estimatedPrCost || project.estimatedCost),
-            jobBalanceCost: balance,
-            requestedBy: wo.requestedBy || "",
-            department: wo.department || "",
-          })
-        }
+      } catch (err) {
+        toast({ title: "โหลดข้อมูลไม่สำเร็จ", variant: "destructive" })
+      } finally {
+        setLoading(false)
       }
     }
 
-    setItems(
-      wo.items?.map((item, i) => ({
-        id: `wo-item-${Date.now()}-${i}`,
-        itemNo: i + 1,
-        description: item.description || "",
-        quantity: item.quantity || 1,
-        unitPrice: item.unitPrice || 0,
-        estimatedPrice: item.estimatedPrice || item.unitPrice || 0,
-        unit: item.unit || "ชิ้น",
-        totalPrice: (item.quantity || 1) * (item.unitPrice || 0),
-      })) || []
-    )
-  }, [wo, wr, projects, wos, suppliers])
+    if (id) fetchWO()
+  }, [id, toast])
+
+  useEffect(() => {
+    if (woData?.orderDate && deliveryDate) {
+      const order = parseBackendDate(woData.orderDate)
+      if (order) {
+        const days = differenceInDays(deliveryDate, order)
+        if (days >= 0) setDurationDays(days)
+        else setDurationDays(0)
+      }
+    }
+  }, [deliveryDate, woData?.orderDate])
+
+  const handleDurationChange = (days: number) => {
+    setDurationDays(days)
+    if (woData?.orderDate && days >= 0) {
+      const order = parseBackendDate(woData.orderDate)
+      if (order) {
+        const newDate = addDays(order, days)
+        setDeliveryDate(newDate)
+      }
+    }
+  }
 
   const addItem = () => {
-    setItems(prev => [
-      ...prev,
-      {
-        id: `wo-item-${Date.now()}`,
-        itemNo: prev.length + 1,
-        description: "",
-        quantity: 1,
-        unitPrice: 0,
-        estimatedPrice: 0,
-        unit: "ชิ้น",
-        totalPrice: 0,
-      },
-    ])
+    setItems(prev => [...prev, {
+      description: "",
+      quantity: 1,
+      unit: "ชิ้น",
+      unitPrice: 0,
+      totalPrice: 0,
+    }])
   }
 
-  const removeItem = (id: string) => {
-    setItems(prev => {
-      const filtered = prev.filter(item => item.id !== id)
-      return filtered.map((item, i) => ({ ...item, itemNo: i + 1 }))
-    })
+  const removeItem = (index: number) => {
+    setItems(prev => prev.filter((_, i) => i !== index))
   }
 
-  const updateItem = (id: string, field: keyof WOItem, value: any) => {
-    setItems(prev =>
-      prev.map(item => {
-        if (item.id === id) {
-          const updated = { ...item, [field]: value }
-          if (field === "quantity" || field === "unitPrice") {
-            updated.totalPrice = (updated.quantity || 0) * (updated.unitPrice || 0)
-            if (field === "unitPrice") updated.estimatedPrice = value
-          }
-          return updated
+  const updateItem = (index: number, field: keyof WOItem, value: any) => {
+    setItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        let updatedValue = value
+        if (field === "quantity" || field === "unitPrice") {
+          updatedValue = Number(value) || 0
         }
-        return item
+        const updated = { ...item, [field]: updatedValue }
+        updated.totalPrice = updated.quantity * updated.unitPrice
+        return updated
+      }
+      return item
+    }))
+  }
+
+  const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
+  const vatAmount = subtotal * 0.07
+  const totalAmount = subtotal + vatAmount
+
+  const handleSave = () => {
+    if (items.some(item => !item.description.trim())) {
+      toast({ title: "กรุณากรอกรายการงานให้ครบ", variant: "destructive" })
+      return
+    }
+    setShowConfirmModal(true)
+  }
+
+  const confirmSave = async () => {
+    try {
+      setSaving(true)
+
+      const payload = {
+        deliveryDate: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
+        deliveryLocation: deliveryLocation.trim() || null,
+        remark: remark.trim() || null,
+        paymentTerms: woData?.paymentTerms || "ภายใน 30 วัน",
+        status: status,
+        items: items.map(item => ({
+          description: item.description.trim(),
+          quantity: item.quantity,
+          unit: item.unit?.trim() || "ชิ้น",
+          unitPrice: Number(item.unitPrice) || 0,
+        })),
+      }
+
+      const res = await fetch(`${API_BASE_URL}/wo/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       })
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}))
+        throw new Error(error.message || "บันทึกไม่สำเร็จ")
+      }
+
+      toast({ title: "บันทึกสำเร็จ!", description: `WO ${woData?.woNumber} ได้รับการอัปเดตแล้ว` })
+      router.push(`/wo`)
+    } catch (err: any) {
+      toast({ title: "บันทึกไม่สำเร็จ", description: err.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+      setShowConfirmModal(false)
+    }
+  }
+
+  if (loading || !woData) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="text-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p>กำลังโหลดข้อมูล WO...</p>
+        </div>
+      </div>
     )
   }
 
-  const subtotal = items.reduce((sum, item) => sum + (item.totalPrice || 0), 0)
-  const vatAmount = (subtotal * vatRate) / 100
-  const serviceTaxAmount = (subtotal * serviceTaxRate) / 100
-  const totalAmount = subtotal + vatAmount + serviceTaxAmount
-
-  const handleSubmit = () => {
-    if (status !== "ร่าง") {
-      if (!traderId) return toast({ title: "กรุณาเลือก Trader", variant: "destructive" })
-      if (!supplierId) return toast({ title: "กรุณาเลือก Supplier", variant: "destructive" })
-      if (items.length === 0 || items.some(i => !i.description?.trim()))
-        return toast({ title: "กรุณากรอกรายการสินค้าให้ครบ", variant: "destructive" })
-    }
-
-    if (Number(projectInfo.jobBalanceCost) < 0) {
-      if (!window.confirm(`ยอดคงเหลือใน Job ติดลบ ${formatCurrency(projectInfo.jobBalanceCost)}\nยังต้องการบันทึกหรือไม่?`))
-        return
-    }
-
-    const traderObj = clients.find(c => c.id === traderId) || traders.find(t => t.id === traderId)
-    const supplierObj = suppliers.find(s => s.id === supplierId)
-
-    const newHistory: WOHistory = {
-      by: "ผู้ใช้ระบบ",
-      action: status === "ร่าง" ? "บันทึกเป็นร่าง" : "แก้ไข WO",
-      at: new Date().toISOString(),
-    }
-
-    const updatedWO: WorkOrder = {
-      ...wo,
-      trader: traderId,
-      traderName: traderObj?.name || wo.traderName || "",
-      supplier: supplierId,
-      supplierName: supplierObj?.name || supplierName || "",
-      deliveryLocation,
-      deliveryDate,
-      paymentTerms,
-      remarks: notes,
-      description,
-      items,
-      subtotal,
-      vatRate,
-      vatAmount,
-      serviceTaxRate,
-      serviceTaxAmount,
-      totalAmount,
-      status,
-      updatedAt: new Date().toISOString(),
-      history: [...(wo.history || []), newHistory],
-      expteamQuotation: projectInfo.expteamQuotation || expteamQuotation || "",
-      estimatedPrCost: projectInfo.estimatedPrCost || estimatedPrCost || "",
-      jobBalanceCost: Number(projectInfo.jobBalanceCost),
-    }
-
-    try {
-      updateWO(wo.id, updatedWO)
-      toast({ title: "บันทึกสำเร็จ!", description: `WO: ${wo.woNumber || wo.orderNumber}` })
-      router.push("/wo")
-    } catch {
-      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถบันทึกได้", variant: "destructive" })
-    }
-  }
+  const job: Partial<Job> = woData.job || {}
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-      <div className="w-full p-4 md:p-6 lg:p-8 space-y-6">
-        {/* Header */}
-        <Card className="border-0 shadow-lg">
-          <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <Link href="/wo">
-                  <Button variant="ghost" size="icon" className="rounded-full">
-                    <ArrowLeft className="h-5 w-5" />
-                  </Button>
-                </Link>
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Edit (WO)</h1>
-                  <p className="text-sm text-blue-600 font-medium">
-                    WO: {wo.woNumber || wo.orderNumber} | WR: {wr?.wrNumber || "-"}
-                  </p>
-                </div>
-              </div>
-              <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-green-600">
-                <Save className="h-4 w-4 mr-2" /> บันทึกการแก้ไข
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+    <div className="min-h-screen w-full space-y-6 px-6">
+      {/* Header */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 flex items-center justify-between dark:bg-black border border-white-700">
+        <div className="flex items-center gap-4">
+          <Link href={`/wo`}>
+            <Button variant="outline" size="icon" className="dark:text-white cursor-pointer hover:dark:bg-slate-600">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold">แก้ไข WO: {woData.woNumber}</h1>
+            <p className="text-muted-foreground">Work Order</p>
+          </div>
+        </div>
+        <Button onClick={handleSave} disabled={saving} className="dark:bg-green-600 dark:text-white cursor-pointer hover:dark:bg-blue-600">
+          <Save className="h-5 w-5 mr-2" />
+          {saving ? "กำลังบันทึก..." : "บันทึก"}
+        </Button>
+      </div>
 
-        {/* ฟอร์มหลัก */}
-        <Card>
-          <CardContent className="pt-6 space-y-8">
-            {/* Project Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <Label>Project Name</Label>
-                <Input value={projectInfo.projectName || ""} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>Department</Label>
-                <Input value={projectInfo.department || ""} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>Requester</Label>
-                <Input value={projectInfo.requestedBy || ""} readOnly />
-              </div>
-            </div>
+      {/* ฟอร์มข้อมูล */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 space-y-8 dark:bg-black border border-white-700">
+        {/* Row 1 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label>Project Name</Label>
+            <Input value={job.jobName || "-"} readOnly className="bg-gray-100" />
+          </div>
+          <div className="space-y-2">
+            <Label>Department</Label>
+            <Input value="-" readOnly className="bg-gray-100" />
+          </div>
+          <div className="space-y-2">
+            <Label>Requester</Label>
+            <Input value={woData.requester} readOnly className="bg-gray-100" />
+          </div>
+        </div>
 
-            {/* วันที่ */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <Label>Order Date</Label>
-                <Input type="date" value={orderDate} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>วันที่ส่งมอบ</Label>
-                <Input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>จำนวนวัน</Label>
-                <Input type="number" value={durationDays} readOnly />
-              </div>
+        {/* Row 2 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label>Job Note</Label>
+            <Input value={woData.jobNote} readOnly className="bg-gray-100" />
+            <div className="flex items-center space-x-2 pt-1">
+              <input
+                type="checkbox"
+                id="extraCharge"
+                checked={woData.extraCharge}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600
+                               dark:bg-black dark:border-gray-600"
+              />
+              <Label htmlFor="extraCharge" className="text-sm dark:text-slate-200 cursor-pointer">
+                Extra charge
+              </Label>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Request Date</Label>
+            <Input
+              type="text"
+              value={formatDateDisplay(parseBackendDate(woData.orderDate))}
+              readOnly
+              className="bg-gray-100"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Ros Date</Label>
+            <Input
+              type="date"
+              value={deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : ""}
+              onChange={(e) => {
+                const value = e.target.value
+                if (value) {
+                  const newDate = new Date(value)
+                  if (isValid(newDate)) {
+                    setDeliveryDate(newDate)
+                  }
+                } else {
+                  setDeliveryDate(null)
+                }
+              }}
+            />
+          </div>
+        </div>
 
-            {/* Trader + Job + CC */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <Label>Trader</Label>
-                <Select value={traderId} onValueChange={setTraderId}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="เลือก Trader" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-- เลือก Trader --</SelectItem>
-                    {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    {traders.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Job No.</Label>
-                <Input value={projectInfo.jobNumber || ""} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>C.C No.</Label>
-                <Input value={projectInfo.ccNo || ""} readOnly />
-              </div>
+        {/* Row 3 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label>Client</Label>
+            <Input value={job.trader || "-"} readOnly className="bg-gray-100" />
+          </div>
+          <div className="space-y-2">
+            <Label>Job No.</Label>
+            <Input value={job.jobNo || "-"} readOnly className="bg-gray-100" />
+          </div>
+          <div className="space-y-2">
+            <Label>CC No.</Label>
+            <Input value={job.ccNo || "-"} readOnly className="bg-gray-100" />
+          </div>
+        </div>
+
+        {/* Row 4 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label>Expteam Quotation</Label>
+            <Input value={job.expteamQuotation || "-"} readOnly className="bg-gray-100" />
+          </div>
+          <div className="space-y-2">
+            <Label>Estimated Cost</Label>
+            <Input value={job.estimatedPrCost ? job.estimatedPrCost.toLocaleString() : "-"} readOnly className="bg-gray-100" />
+          </div>
+          <div className="space-y-2">
+            <Label>Job Balance Cost</Label>
+            <Input value="-" readOnly className="bg-gray-100" />
+          </div>
+        </div>
+
+        {/* Supplier, Delivery, Status */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <div className="space-y-2">
+            <Label className="text-sm">Supplier</Label>
+            <Input defaultValue={supplier || "-Select Suppliers-"} readOnly className="h-10 text-sm bg-gray-100 dark:bg-black" />
+          </div>
+          <div className="space-y-2">
+            <Label className="dark:text-slate-200">Currency <span className="text-red-600">*</span></Label>
+            <Input
+              value={currency || "-"}
+              readOnly
+              className="h-10 text-sm dark:bg-black dark:border-white-700 dark:text-slate-400"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="dark:text-slate-200">Distcount Type <span className="text-red-600">*</span></Label>
+            <Input
+              value={discountType || "-"}
+              readOnly
+              className="h-10 text-sm dark:bg-black dark:border-white-700 dark:text-slate-400"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="dark:text-slate-200">Discount Value <span className="text-red-600">*</span></Label>
+            <Input
+              value={discountValue || "-"}
+              readOnly
+              className="h-10 text-sm dark:bg-black dark:border-white-700 dark:text-slate-400"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">Delivery Location</Label>
+            <Input defaultValue={deliveryLocation || "-"} readOnly className="h-10 text-sm bg-gray-50 dark:bg-black" />
+          </div>
+          <div className="space-y-2">
+            <Label className="dark:text-slate-200">Plan Type</Label>
+            <div className="flex items-center space-x-6 pt-1">
+              {/* PLAN */}
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={planType === "PLAN"} // ใช้ state แยก
+                  onChange={() => setPlanType("PLAN")} // เปลี่ยน state เมื่อคลิก
+                  className="h-4 w-4"
+                />
+                <span className="text-sm dark:text-slate-200">Plan</span>
+              </label>
+
+              {/* UNPLAN */}
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={planType === "UNPLAN"}
+                  onChange={() => setPlanType("UNPLAN")}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm dark:text-slate-200">Unplan</span>
+              </label>
             </div>
-
-            {/* Expteam + Estimated + Balance */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <Label>Expteam Quotation</Label>
-                <Input value={expteamQuotation} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>Estimated PR Cost</Label>
-                <Input value={estimatedPrCost} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>Job Balance Cost</Label>
-                <Input value={formatCurrency(projectInfo.jobBalanceCost)} readOnly />
-              </div>
-            </div>
-
-            {/* Supplier + Status */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label>Supplier</Label>
-                <Select value={supplierId} onValueChange={val => {
-                  setSupplierId(val)
-                  const s = suppliers.find(x => x.id === val)
-                  setSupplierName(s?.name || "")
-                }}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="เลือก Supplier" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-- เลือก Supplier --</SelectItem>
-                    {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>สถานะ</Label>
-                <Select value={status} onValueChange={v => setStatus(v as any)}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ร่าง">ร่าง</SelectItem>
-                    <SelectItem value="รออนุมัติ">รออนุมัติ</SelectItem>
-                    <SelectItem value="อนุมัติแล้ว">อนุมัติแล้ว</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">Status</Label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="h-10 text-sm w-full dark:bg-black">
+                <SelectValue placeholder="เลือกสถานะ" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="pending">Waitong for Approval</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Reject</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-4">
             <div className="space-y-2">
-              <Label>รายละเอียด</Label>
-              <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+              <Label>Payment Method <span className="text-red-600">*</span></Label>
+              <RadioGroup
+                value={paymentMethod}
+                onValueChange={(value) => setPaymentMethod(value as "cash" | "credit")}
+                className="flex flex-col space-y-3"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="cash" id="payment-cash" />
+                  <Label htmlFor="payment-cash" className="font-normal cursor-pointer">
+                    Cash
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="credit" id="payment-credit" />
+                  <Label htmlFor="payment-credit" className="font-normal cursor-pointer">
+                    Credit
+                  </Label>
+                </div>
+              </RadioGroup>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {paymentMethod === "credit" && (
               <div className="space-y-2">
-                <Label>สถานที่ส่งของ</Label>
-                <Input value={deliveryLocation} onChange={e => setDeliveryLocation(e.target.value)}
-                  className="h-10" />
-              </div>
-              <div className="space-y-2">
-                <Label>เงื่อนไขการชำระเงิน</Label>
-                <Input value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="เช่น เครดิต 30 วัน"
-                  className="h-10" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>หมายเหตุ</Label>
-              <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* รายการสินค้า */}
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>รายการสินค้า/งาน</CardTitle>
-              <Button onClick={addItem} className="bg-blue-600 hover:bg-green-600">
-                <Plus className="h-4 w-4 mr-2" /> เพิ่มรายการ
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">ลำดับ</TableHead>
-                    <TableHead>รายการ</TableHead>
-                    <TableHead className="w-24 text-center">จำนวน</TableHead>
-                    <TableHead className="w-24 text-center">หน่วย</TableHead>
-                    <TableHead className="w-32 text-right">ราคา/หน่วย</TableHead>
-                    <TableHead className="w-32 text-right">รวม</TableHead>
-                    <TableHead className="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        ไม่มีรายการสินค้า
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    items.map(item => (
-                      <TableRow key={item.id}>
-                        <TableCell className="text-center">{item.itemNo}</TableCell>
-                        <TableCell>
-                          <Input value={item.description} onChange={e => updateItem(item.id, "description", e.target.value)} />
-                        </TableCell>
-                        <TableCell>
-                          <Input type="number" value={item.quantity} onChange={e => updateItem(item.id, "quantity", Number(e.target.value) || 0)} className="text-center" />
-                        </TableCell>
-                        <TableCell>
-                          <Input value={item.unit} onChange={e => updateItem(item.id, "unit", e.target.value)} className="text-center" />
-                        </TableCell>
-                        <TableCell>
-                          <Input type="number" value={item.unitPrice} onChange={e => updateItem(item.id, "unitPrice", Number(e.target.value) || 0)} className="text-right" />
-                        </TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(item.totalPrice)}</TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {items.length > 0 && (
-              <div className="mt-6 pt-6 border-t text-right space-y-3">
-                <div className="flex justify-end gap-12 text-lg">
-                  <span className="font-medium">ยอดรวม</span>
-                  <span className="font-bold w-40">{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-end gap-12 p-3 rounded-lg bg-blue-50">
-                  <span>VAT ({vatRate}%)</span>
-                  <span className="font-bold text-blue-700 w-40">{formatCurrency(vatAmount)}</span>
-                </div>
-                <div className="flex justify-end gap-12 p-3 rounded-lg bg-purple-50">
-                  <span>Service Tax ({serviceTaxRate}%)</span>
-                  <span className="font-bold text-purple-700 w-40">{formatCurrency(serviceTaxAmount)}</span>
-                </div>
-                <div className="flex justify-end gap-12 pt-4 border-t text-2xl font-bold text-blue-600">
-                  <span>รวมทั้งสิ้น</span>
-                  <span className="w-40">{formatCurrency(totalAmount)}</span>
-                </div>
+                <Label>Payment Terms</Label>
+                <Input
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  placeholder=""
+                />
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+
+        {/* หมายเหตุ */}
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+          <div className="space-y-2">
+            <Label>หมายเหตุ</Label>
+            <Textarea value={remark} onChange={e => setRemark(e.target.value)} rows={3} />
+          </div>
+        </div>
       </div>
+
+      {/* รายการงาน */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 dark:bg-black border border-white-700">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">รายการงาน</h2>
+          <Button onClick={addItem} className="dark:bg-green-600 dark:text-white cursor-pointer hover:dark:bg-blue-600">
+            <Plus className="h-5 w-5 mr-2" />
+            เพิ่มงาน
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-center">ลำดับ</TableHead>
+                <TableHead>รายการงาน</TableHead>
+                <TableHead className="text-center">จำนวน</TableHead>
+                <TableHead className="text-center">หน่วย</TableHead>
+                <TableHead className="text-right">ราคา/หน่วย</TableHead>
+                <TableHead className="text-right">รวม</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    ยังไม่มีรายการงาน
+                  </TableCell>
+                </TableRow>
+              ) : (
+                items.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="text-center">{index + 1}</TableCell>
+                    <TableCell>
+                      <Input value={item.description} onChange={e => updateItem(index, "description", e.target.value)} />
+                    </TableCell>
+                    <TableCell>
+                      <Input type="number" value={item.quantity} onChange={e => updateItem(index, "quantity", Number(e.target.value) || 0)} className="text-center" />
+                    </TableCell>
+                    <TableCell>
+                      <Input value={item.unit} onChange={e => updateItem(index, "unit", e.target.value)} className="text-center" />
+                    </TableCell>
+                    <TableCell>
+                      <Input type="number" value={item.unitPrice} onChange={e => updateItem(index, "unitPrice", Number(e.target.value) || 0)} className="text-right" />
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(item.totalPrice)}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="outline" size="icon" onClick={() => removeItem(index)} className="text-red-600">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+
+          {items.length > 0 && (
+            <div className="mt-8 pt-6 border-t text-right space-y-3">
+              <div className="flex justify-end gap-12 p-3">
+                <span>ยอดรวม</span>
+                <span className="font-medium w-32">{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="flex justify-end gap-12 p-3 rounded">
+                <span>VAT (7.00%)</span>
+                <span className="font-bold w-32">{formatCurrency(vatAmount)}</span>
+              </div>
+              <div className="flex justify-end gap-12 pt-4 border-t text-2xl font-bold">
+                <span>รวมทั้งสิ้น</span>
+                <span className="w-32 text-green-600">{formatCurrency(totalAmount)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal ยืนยัน */}
+      <AlertDialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader className="text-center">
+            <AlertDialogTitle className="text-2xl font-bold text-center">ยืนยันการบันทึก</AlertDialogTitle>
+          </AlertDialogHeader>
+
+          <div className="text-center space-y-3 py-2">
+            <div className="text-gray-700">คุณต้องการบันทึกการแก้ไขหรือไม่</div>
+            <div className="text-lg font-semibold text-gray-900">WO {woData.woNumber}</div>
+          </div>
+
+          <AlertDialogFooter className="flex gap-3 pt-6">
+            <AlertDialogCancel className="flex-1 border-2 border-gray-300 hover:bg-gray-100">
+              ยกเลิก
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmSave}
+              disabled={saving}
+              className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-70"
+            >
+              {saving ? "กำลังบันทึก..." : "ยืนยันบันทึก"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

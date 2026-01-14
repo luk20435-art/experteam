@@ -1,334 +1,417 @@
+// app/trash/wo/page.tsx
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Search, Eye, ArrowLeftCircle, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Search, Eye, RotateCcw, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { format } from "date-fns"
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog"
 
-interface WorkOrder {
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
+
+interface WO {
   id: number
-  workRequestId: number
-  orderNumber: string
-  title: string
-  assignedTo: number
-  status: "Draft" | "Approved" | "In Progress" | "Completed" | "Cancelled"
-  totalCost: number
-  createdAt: string
-  deleted: boolean
-  deletedAt: string
+  woNumber: string
+  requester: string
+  orderDate: string
+  deliveryDate: string | null
+  status: string
+  wr?: {
+    wrNumber: string
+    jobName: string
+    jobNo: string
+  }
 }
-interface WorkRequest { id: number; title: string }
-interface Employee { id: number; name: string }
 
-export default function TrashWorkOrderPage() {
-  const [orders, setOrders] = useState<WorkOrder[]>([])
-  const [requests, setRequests] = useState<WorkRequest[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
-
-  useEffect(() => {
-    const o = localStorage.getItem("work-orders")
-    if (o) setOrders(JSON.parse(o))
-
-    const r = localStorage.getItem("work-requests")
-    if (r) setRequests(JSON.parse(r))
-
-    const e = localStorage.getItem("organization-employees")
-    if (e) setEmployees(JSON.parse(e))
-  }, [])
-
-  // กรองเฉพาะที่ถูกลบ
-  const deletedOrders = useMemo(() => orders.filter(o => o.deleted), [orders])
+export default function TrashWOPage() {
+  const [wos, setWOs] = useState<WO[]>([])
+  const [loading, setLoading] = useState(true)
 
   const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
-  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest")
 
-  const filteredAndSorted = useMemo(() => {
-    let filtered = deletedOrders.filter(o => {
-      const req = requests.find(r => r.id === o.workRequestId)
-      const emp = employees.find(e => e.id === o.assignedTo)
-      const searchLower = searchTerm.toLowerCase()
-      return (
-        o.orderNumber.toLowerCase().includes(searchLower) ||
-        o.title.toLowerCase().includes(searchLower) ||
-        req?.title.toLowerCase().includes(searchLower) ||
-        emp?.name.toLowerCase().includes(searchLower)
-      )
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [woToAction, setWoToAction] = useState<{ id: number; number: string } | null>(null)
+
+  // ดึงข้อมูลจาก endpoint trash โดยตรง
+  useEffect(() => {
+    const fetchTrashedWOs = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`${API_BASE_URL}/wo/trash`)  // ตรงกับ @Get('trash') ใน controller
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.message || "ไม่สามารถโหลดข้อมูลถังขยะได้")
+        }
+        const data: WO[] = await res.json()
+        setWOs(data)
+      } catch (err: any) {
+        console.error(err)
+        alert(err.message || "เกิดข้อผิดพลาดในการโหลดข้อมูล")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchTrashedWOs()
+  }, [])
+
+  const filteredWOs = useMemo(() => {
+    return wos.filter((wo) => {
+      const matchesSearch =
+        wo.woNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (wo.wr?.wrNumber || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        wo.requester.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (wo.wr?.jobName || "").toLowerCase().includes(searchTerm.toLowerCase())
+
+      const matchesStatus = statusFilter === "all" || wo.status.toLowerCase() === statusFilter.toLowerCase()
+
+      return matchesSearch && matchesStatus
     })
+  }, [wos, searchTerm, statusFilter])
 
-    filtered.sort((a, b) => {
-      const dateA = a.deletedAt ? new Date(a.deletedAt).getTime() : 0
-      const dateB = b.deletedAt ? new Date(b.deletedAt).getTime() : 0
-      return sortOrder === "latest" ? dateB - dateA : dateA - dateB
-    })
-
-    return filtered
-  }, [deletedOrders, requests, employees, searchTerm, sortOrder])
-
-  const totalItems = filteredAndSorted.length
+  const totalItems = filteredWOs.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = Math.min(startIndex + pageSize, totalItems)
-  const paginated = filteredAndSorted.slice(startIndex, endIndex)
+  const paginatedWOs = filteredWOs.slice(startIndex, endIndex)
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, sortOrder, pageSize])
+  }, [searchTerm, statusFilter, pageSize])
 
-  // กู้คืน
-  const handleRestore = (id: number, number: string) => {
-    if (confirm(`กู้คืนคำสั่งงาน "${number}" หรือไม่?`)) {
-      setOrders(prev => prev.map(o =>
-        o.id === id ? { ...o, deleted: false, deletedAt: "" } : o
-      ))
+  const getStatusBadge = (status: string) => {
+    const lower = status.toLowerCase()
+    if (lower === "approved" || lower.includes("อนุมัติ")) return <Badge className="bg-green-600 text-white">อนุมัติแล้ว</Badge>
+    if (lower === "pending" || lower.includes("รออนุมัติ")) return <Badge className="bg-yellow-500 text-white">รออนุมัติ</Badge>
+    if (lower === "rejected") return <Badge className="bg-red-600 text-white">ปฏิเสธ</Badge>
+    return <Badge variant="secondary">ร่าง</Badge>
+  }
+
+  const formatDateOnly = (dateString: string | null | undefined): string => {
+    if (!dateString) return "-"
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString("th-TH")
+    } catch {
+      return "-"
     }
   }
 
-  // ลบถาวร
-  const handlePermanentDelete = (id: number, number: string) => {
-    if (confirm(`ลบคำสั่งงาน "${number}" ถาวร 100% หรือไม่?\n\nไม่สามารถกู้คืนได้อีก`)) {
-      setOrders(prev => prev.filter(o => o.id !== id))
+  const openRestoreModal = (id: number, number: string) => {
+    setWoToAction({ id, number })
+    setRestoreModalOpen(true)
+  }
+
+  const openDeleteModal = (id: number, number: string) => {
+    setWoToAction({ id, number })
+    setDeleteModalOpen(true)
+  }
+
+  const confirmRestore = async () => {
+    if (!woToAction) return
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/wo/${woToAction.id}/restore`, {
+        method: "PATCH",
+      })
+
+      if (!res.ok) throw new Error("กู้คืนไม่สำเร็จ")
+
+      setWOs(prev => prev.filter(wo => wo.id !== woToAction.id))
+      alert(`กู้คืน WO "${woToAction.number}" สำเร็จ!`)
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการกู้คืน")
+    } finally {
+      setRestoreModalOpen(false)
+      setWoToAction(null)
     }
   }
 
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) setCurrentPage(page)
+  const confirmPermanentDelete = async () => {
+    if (!woToAction) return
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/wo/${woToAction.id}/force`, {
+        method: "DELETE",
+      })
+
+      if (!res.ok) throw new Error("ลบถาวรไม่สำเร็จ")
+
+      setWOs(prev => prev.filter(wo => wo.id !== woToAction.id))
+      alert(`ลบ WO "${woToAction.number}" ถาวรเรียบร้อย`)
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการลบถาวร")
+    } finally {
+      setDeleteModalOpen(false)
+      setWoToAction(null)
+    }
   }
 
-  const getReqTitle = (id: number) => requests.find(r => r.id === id)?.title || "-"
-  const getEmpName = (id: number) => employees.find(e => e.id === id)?.name || "-"
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+          <p className="text-lg">กำลังโหลดข้อมูลถังขยะ WO...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-4 md:space-y-6 p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-            <Trash2 className="h-7 w-7 text-red-600" />
-            ถังขยะ - คำสั่งงาน
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            คำสั่งงานที่ถูกลบ ({deletedOrders.length} รายการ)
-          </p>
-        </div>
-        <Link href="/work-order">
-          <Button variant="outline" className="w-full sm:w-auto">
-            <ChevronLeft className="mr-2 h-4 w-4" />
-            กลับสู่รายการ
-          </Button>
-        </Link>
-      </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-black">
+      <div className="max-w-full mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
 
-      {/* ตัวกรอง */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-            <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
-              <div className="relative flex-1 min-w-0">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              <Trash2 className="h-8 w-8 text-red-600" />
+              ถังขยะ - Work Order (WO)
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              ใบสั่งงานภายในที่ถูกลบทั้งหมด ({wos.length} รายการ)
+            </p>
+          </div>
+          <Link href="/wo">
+            <Button variant="outline" size="lg">
+              <ChevronLeft className="mr-2 h-5 w-5" />
+              กลับสู่รายการ WO
+            </Button>
+          </Link>
+        </div>
+
+        {/* Filter Bar */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="ค้นหาเลขที่, ชื่อ, คำขอ, ผู้รับ..."
+                  placeholder="ค้นหาเลขที่ WO, WR, ผู้ขอ, ชื่องาน..."
                   value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="pl-10 w-full"
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
                 />
               </div>
-              <Select value={sortOrder} onValueChange={v => setSortOrder(v as "latest" | "oldest")}>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="ทุกสถานะ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกสถานะ</SelectItem>
+                  <SelectItem value="pending">รออนุมัติ</SelectItem>
+                  <SelectItem value="approved">อนุมัติแล้ว</SelectItem>
+                  <SelectItem value="rejected">ปฏิเสธ</SelectItem>
+                  <SelectItem value="draft">ร่าง</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-full sm:w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="latest">ลบล่าสุดก่อน</SelectItem>
-                  <SelectItem value="oldest">ลบเก่าก่อน</SelectItem>
+                  <SelectItem value="10">10 รายการ</SelectItem>
+                  <SelectItem value="20">20 รายการ</SelectItem>
+                  <SelectItem value="50">50 รายการ</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <Select value={pageSize.toString()} onValueChange={v => setPageSize(Number(v))}>
-              <SelectTrigger className="w-full sm:w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5 รายการ</SelectItem>
-                <SelectItem value="10">10 รายการ</SelectItem>
-                <SelectItem value="20">20 รายการ</SelectItem>
-                <SelectItem value="50">50 รายการ</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* ตาราง */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg md:text-xl">คำสั่งงานที่ถูกลบ</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-semibold">เลขที่</th>
-                  <th className="text-left p-3 font-semibold hidden md:table-cell">ชื่อ</th>
-                  <th className="text-left p-3 font-semibold hidden lg:table-cell">คำขอ</th>
-                  <th className="text-left p-3 font-semibold hidden xl:table-cell">ผู้รับ</th>
-                  <th className="text-right p-3 font-semibold hidden 2xl:table-cell">ต้นทุน</th>
-                  <th className="text-center p-3 font-semibold hidden lg:table-cell">วันที่ลบ</th>
-                  <th className="text-right p-3 font-semibold">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-12">
-                      <Trash2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg font-medium text-muted-foreground">ไม่มีคำสั่งงานในถังขยะ</p>
-                      <p className="text-sm mt-1">คำสั่งงานที่ถูกลบจะแสดงที่นี่</p>
-                    </td>
-                  </tr>
-                ) : (
-                  paginated.map(o => (
-                    <tr key={o.id} className="border-b hover:bg-red-50/30 transition-colors">
-                      <td className="p-3">
-                        <div className="font-medium">{o.orderNumber}</div>
-                        <div className="text-xs text-muted-foreground md:hidden">{o.title}</div>
-                      </td>
-                      <td className="p-3 hidden md:table-cell">{o.title}</td>
-                      <td className="p-3 hidden lg:table-cell">{getReqTitle(o.workRequestId)}</td>
-                      <td className="p-3 hidden xl:table-cell">{getEmpName(o.assignedTo)}</td>
-                      <td className="p-3 text-right hidden 2xl:table-cell">
-                        <span className="font-medium">฿{(o.totalCost ?? 0).toLocaleString()}</span>
-                      </td>
-                      <td className="p-3 text-center hidden lg:table-cell text-sm">
-                        {o.deletedAt
-                          ? format(new Date(o.deletedAt), "dd MMM yyyy", { locale: undefined })
-                          : "-"}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex justify-end gap-1">
-                          <TooltipProvider>
-                            {/* ดู */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Link href={`/work-order/${o.id}`}>
-                                  <Button variant="outline" size="sm" className="text-blue-600 hover:bg-blue-50">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                </Link>
-                              </TooltipTrigger>
-                              <TooltipContent>ดูรายละเอียด</TooltipContent>
-                            </Tooltip>
+        {/* Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle>รายการ WO ที่อยู่ในถังขยะ ({totalItems} รายการ)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {paginatedWOs.length === 0 ? (
+              <div className="text-center py-16">
+                <Trash2 className="h-16 w-16 mx-auto mb-4 opacity-40 text-muted-foreground" />
+                <p className="text-lg font-medium text-muted-foreground">
+                  {wos.length === 0 ? "ถังขยะว่างเปล่า" : "ไม่พบรายการที่ตรงกับการค้นหา"}
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {wos.length === 0 ? "ไม่มี WO ที่ถูกลบอยู่ในขณะนี้" : "ลองเปลี่ยนคำค้นหาหรือตัวกรอง"}
+                </p>
+              </div>
+            ) : (
+              <>
+                <TooltipProvider>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-20">No.</TableHead>
+                          <TableHead>WO Number</TableHead>
+                          <TableHead>Job Name</TableHead>
+                          <TableHead>Job Number</TableHead>
+                          <TableHead>Requester</TableHead>
+                          <TableHead>Request Date</TableHead>
+                          <TableHead>Delivery Date</TableHead>
+                          <TableHead className="text-center">Status</TableHead>
+                          <TableHead className="text-center">จัดการ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedWOs.map((wo) => (
+                          <TableRow key={wo.id} className="hover:bg-red-50/30">
+                            <TableCell className="font-medium">{wo.id}</TableCell>
+                            <TableCell className="font-medium">{wo.woNumber}</TableCell>
+                            <TableCell>{wo.wr?.jobName || "-"}</TableCell>
+                            <TableCell>{wo.wr?.jobNo || "-"}</TableCell>
+                            <TableCell>{wo.requester}</TableCell>
+                            <TableCell>{formatDateOnly(wo.orderDate)}</TableCell>
+                            <TableCell>{formatDateOnly(wo.deliveryDate)}</TableCell>
+                            <TableCell className="text-center">{getStatusBadge(wo.status)}</TableCell>
+                            <TableCell>
+                              <div className="flex justify-center gap-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Link href={`/wo/${wo.id}`}>
+                                      <Button variant="outline" size="icon" className="h-8 w-8 text-blue-600">
+                                        <Eye className="h-4 w-4" />
+                                      </Button>
+                                    </Link>
+                                  </TooltipTrigger>
+                                  <TooltipContent>ดูรายละเอียด</TooltipContent>
+                                </Tooltip>
 
-                            {/* กู้คืน */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-green-600 hover:bg-green-50"
-                                  onClick={() => handleRestore(o.id, o.orderNumber)}
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>กู้คืน</TooltipContent>
-                            </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 text-green-600 hover:bg-green-50"
+                                      onClick={() => openRestoreModal(wo.id, wo.woNumber)}
+                                    >
+                                      <ArrowLeftCircle className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>กู้คืน WO</TooltipContent>
+                                </Tooltip>
 
-                            {/* ลบถาวร */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-red-600 hover:bg-red-50"
-                                  onClick={() => handlePermanentDelete(o.id, o.orderNumber)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>ลบถาวร</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 text-red-600 hover:bg-red-50"
+                                      onClick={() => openDeleteModal(wo.id, wo.woNumber)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>ลบถาวร</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </TooltipProvider>
+
+                {/* Pagination */}
+                {totalItems > 0 && (
+                  <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-sm text-muted-foreground">
+                      แสดง {startIndex + 1} - {endIndex} จาก {totalItems} รายการ
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10 รายการ</SelectItem>
+                          <SelectItem value="20">20 รายการ</SelectItem>
+                          <SelectItem value="50">50 รายการ</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <div className="flex items-center gap-1">
+                        <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-sm px-2">หน้า {currentPage} / {totalPages}</span>
+                        <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Pagination */}
-          {totalItems > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-              <div className="text-sm text-muted-foreground">
-                แสดง {startIndex + 1}-{endIndex} จาก {totalItems} รายการ
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
+        {/* Modal กู้คืน */}
+        <AlertDialog open={restoreModalOpen} onOpenChange={setRestoreModalOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>กู้คืน Work Order</AlertDialogTitle>
+              <AlertDialogDescription>
+                คุณต้องการกู้คืน WO "<strong>{woToAction?.number}</strong>" กลับสู่รายการหลักหรือไม่?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmRestore} className="bg-green-600 hover:bg-green-700">
+                ยืนยันกู้คืน
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-                <div className="flex gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const pageNum = i + 1
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={currentPage === pageNum ? "default" : "outline"}
-                        size="sm"
-                        className="w-9"
-                        onClick={() => goToPage(pageNum)}
-                      >
-                        {pageNum}
-                      </Button>
-                    )
-                  })}
-                  {totalPages > 5 && (
-                    <>
-                      <span className="px-2 text-sm text-muted-foreground">...</span>
-                      <Button
-                        variant={currentPage === totalPages ? "default" : "outline"}
-                        size="sm"
-                        className="w-9"
-                        onClick={() => goToPage(totalPages)}
-                      >
-                        {totalPages}
-                      </Button>
-                    </>
-                  )}
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {/* Modal ลบถาวร */}
+        <AlertDialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-red-600">ลบถาวร</AlertDialogTitle>
+              <AlertDialogDescription>
+                ⚠️ คุณแน่ใจหรือไม่ที่จะลบ WO "<strong>{woToAction?.number}</strong>" ถาวร?<br />
+                <span className="text-red-600 font-medium">ไม่สามารถกู้คืนได้อีกต่อไป</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmPermanentDelete} className="bg-red-600 hover:bg-red-700">
+                ยืนยันลบถาวร
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   )
 }

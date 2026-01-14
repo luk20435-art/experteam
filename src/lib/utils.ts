@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 /* ==================== เงิน ==================== */
 export function formatCurrency(amount?: string |number | null | undefined): string {
   const value = Number(amount ?? 0)
-  if (isNaN(value)) return "0.00 ฿"
+  if (isNaN(value)) return "0.00"
 
   return new Intl.NumberFormat("th-TH", {
     style: "currency",

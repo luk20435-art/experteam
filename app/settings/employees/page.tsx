@@ -67,8 +67,8 @@ export default function EmployeePage() {
     <div className="container mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">จัดการพนักงาน (Employees)</h1>
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6 max-w-md">
-        <h2 className="text-xl font-semibold mb-4">
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6 max-w-md dark:bg-black border border-whites">
+        <h2 className="text-xl font-semibold mb-4 ">
           {editId ? 'แก้ไข' : 'เพิ่ม'} พนักงาน
         </h2>
 
@@ -119,9 +119,9 @@ export default function EmployeePage() {
         </div>
       </form>
 
-      <div className="bg-white shadow rounded overflow-hidden">
+      <div className="bg-white shadow rounded overflow-hidden dark:bg-black border border-whites">
         <table className="w-full">
-          <thead className="bg-gray-100">
+          <thead className="bg-gray-100 dark:bg-black border border-whites">
             <tr>
               <th className="p-3 text-left">ID</th>
               <th className="p-3 text-left">ชื่อ</th>

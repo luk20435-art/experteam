@@ -1,19 +1,18 @@
-"use client";
+"use client"
 
-import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
-import { useData } from "@/src/contexts/data-context";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState, useEffect, useMemo } from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/ui/select"
 import {
   Plus,
   Search,
@@ -26,170 +25,200 @@ import {
   ChevronRight,
   Building2,
   Filter,
-  Calendar,
-  DollarSign,
-  FileText,
-} from "lucide-react";
-import { formatCurrency } from "@/src/lib/utils";
+} from "lucide-react"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { startOfDay, endOfDay, format } from "date-fns";
+} from "@/components/ui/tooltip"
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog"
 
-export default function ProjectsPage() {
-  const { projects, moveToTrashProject, clients } = useData();
+interface Job {
+  id: string
+  jobName: string
+  projectCode: string
+  jobNo: string
+  ccNo: string
+  waNumber: string
+  wrPoSrRoNumber: string
+  contactPerson: string
+  contactNumber: string
+  contactEmail: string
+  expteamQuotation: string
+  estimatedPrCost: number
+  startDate: string
+  endDate: string
+  remark: string
+  phone: string
+  traderId?: string
+  status?: string
+  createdAt?: string
+  deleted?: boolean
+  traderName?: string
+}
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "in_progress" | "completed" >("all");
-  const [filterTrader, setFilterTrader] = useState<string>("all");
-  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({
-    from: undefined,
-    to: undefined,
-  });
-  const [dateType, setDateType] = useState<"start" | "end">("start");
-  const [budgetRange, setBudgetRange] = useState<{ min: string; max: string }>({ min: "", max: "" });
-  const [durationRange, setDurationRange] = useState<{ min: string; max: string }>({ min: "", max: "" });
-  const [pageSize, setPageSize] = useState(10);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest");
+interface Trader {
+  id: string
+  name: string
+}
 
-  // กรองเฉพาะที่ยังไม่ถูกลบ
-  const activeProjects = projects.filter((p) => !p.deleted);
+export default function JobsPage() {
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [traders, setTraders] = useState<Trader[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // ฟังก์ชันคำนวณ Duration
-  const getDuration = (start?: string, end?: string) => {
-    if (!start || !end) return 0;
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const diffTime = endDate.getTime() - startDate.getTime();
-    if (diffTime < 0) return 0;
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  };
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterStatus, setFilterStatus] = useState<"all" | "in_progress" | "completed">("all")
+  const [filterTrader, setFilterTrader] = useState<string>("all")
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
 
-  // ดึงชื่อ Trader
-  const getTraderName = (project: any) => {
-    if (project.traderId) {
-      const client = clients.find(c => c.id === project.traderId);
-      return client ? client.name : "ไม่ระบุ";
-    }
-    return project.trader || "ไม่ระบุ";
-  };
-
-  // สถานะ
-  const getStatusInfo = (status: string | undefined) => {
-    if (!status) return { color: "bg-gray-500", text: "ไม่ระบุ", icon: null };
-    const normalized = status.toLowerCase().trim();
-    if (normalized === "in_progress" || normalized.includes("In progress")) {
-      return { color: "bg-blue-500 hover:bg-blue-600", text: "In progress", icon: <Clock className="h-4 w-4" /> };
-    }
-    if (normalized === "completed" || normalized.includes("Complete")) {
-      return { color: "bg-green-500 hover:bg-green-600", text: "Complete", icon: <CheckCircle className="h-4 w-4" /> };
-    }
-    return { color: "bg-gray-500", text: status, icon: null };
-  };
-
-  // กรอง + เรียงลำดับ
-  const filteredAndSortedProjects = useMemo(() => {
-    let filtered = activeProjects.filter((project) => {
-      const traderName = getTraderName(project);
-      const totalBudget = project.totalBudget || 0;
-      const duration = getDuration(project.startDate, project.endDate);
-
-      const matchesSearch =
-        project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.projectNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        traderName.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesStatus = filterStatus === "all" || getStatusInfo(project.status).text === getStatusInfo(filterStatus).text;
-
-      const matchesTrader = filterTrader === "all" || project.trader === filterTrader;
-
-      let matchesDate = true;
-      if (dateRange.from && dateRange.to) {
-        const projectDate = project[dateType === "start" ? "startDate" : "endDate"];
-        if (!projectDate) return false;
-        const pDate = new Date(projectDate);
-        const from = startOfDay(dateRange.from);
-        const to = endOfDay(dateRange.to);
-        matchesDate = pDate >= from && pDate <= to;
-      }
-
-      const matchesBudget =
-        (!budgetRange.min || totalBudget >= Number(budgetRange.min)) &&
-        (!budgetRange.max || totalBudget <= Number(budgetRange.max));
-
-      const matchesDuration =
-        (!durationRange.min || duration >= Number(durationRange.min)) &&
-        (!durationRange.max || duration <= Number(durationRange.max));
-
-      return matchesSearch && matchesStatus && matchesTrader && matchesDate && matchesBudget && matchesDuration;
-    });
-
-    filtered.sort((a, b) => {
-      const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
-      const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
-      return sortOrder === "latest" ? dateB - dateA : dateA - dateB;
-    });
-
-    return filtered;
-  }, [
-    activeProjects,
-    searchTerm,
-    filterStatus,
-    filterTrader,
-    dateRange,
-    dateType,
-    budgetRange,
-    durationRange,
-    sortOrder,
-    clients,
-  ]);
-
-  // Pagination
-  const totalItems = filteredAndSortedProjects.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, totalItems);
-  const paginatedProjects = filteredAndSortedProjects.slice(startIndex, endIndex);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [jobToDelete, setJobToDelete] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterTrader, dateRange, dateType, budgetRange, durationRange, pageSize]);
+    async function fetchData() {
+      try {
+        const [jobsRes, tradersRes] = await Promise.all([
+          fetch("http://localhost:3000/api/jobs"),
+          fetch("http://localhost:3000/api/traders"),
+        ])
 
-  const handleDelete = (id: string, name: string) => {
-    if (confirm(`คุณต้องการลบโครงการ "${name}" หรือไม่?`)) {
-      moveToTrashProject(id);
+        const jobsData = await jobsRes.json()
+        const tradersData = await tradersRes.json()
+
+        const jobList = Array.isArray(jobsData) ? jobsData : jobsData.data || []
+        const traderList = Array.isArray(tradersData) ? tradersData : tradersData.data || []
+
+        jobList.sort((a: Job, b: Job) => Number(a.id) - Number(b.id))
+
+        setJobs(jobList)
+        setTraders(traderList)
+      } catch (err) {
+        console.error("โหลดข้อมูลไม่สำเร็จ:", err)
+      } finally {
+        setLoading(false)
+      }
     }
-  };
 
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) setCurrentPage(page);
-  };
+    fetchData()
+  }, [])
+
+  const getTraderName = (traderId?: string) => {
+    if (!traderId) return "ไม่ระบุ"
+    const trader = traders.find(t => t.id === traderId)
+    return trader?.name || "ไม่ระบุ"
+  }
+
+  const refreshData = async () => {
+    try {
+      const jobsRes = await fetch("http://localhost:3000/api/jobs")
+      const jobsData = await jobsRes.json()
+      const jobList = Array.isArray(jobsData) ? jobsData : jobsData.data || []
+      jobList.sort((a: Job, b: Job) => Number(a.id) - Number(b.id))
+      setJobs(jobList)
+    } catch (err) {
+      console.error("โหลดข้อมูลใหม่ไม่สำเร็จ:", err)
+    }
+  }
+
+  const getStatusInfo = (status?: string) => {
+    if (!status) return { color: "bg-gray-100 text-gray-800", text: "ไม่ระบุ", icon: null }
+
+    const statusLower = status.toLowerCase().trim()
+
+    if (statusLower === "in_progress" || statusLower === "in progress") {
+      return { color: "bg-blue-500 text-white", text: "in progress", icon: <Clock className="h-4 w-4" /> }
+    }
+    if (statusLower === "completed") {
+      return { color: "bg-green-600 text-white", text: "completed", icon: <CheckCircle className="h-4 w-4" /> }
+    }
+
+    return { color: "bg-gray-100 text-gray-800", text: status, icon: null }
+  }
+
+  const filteredJobs = useMemo(() => {
+    return jobs
+      .filter(job => !job.deleted)
+      .filter(job => {
+        const traderName = getTraderName(job.traderId)
+        const searchLower = searchTerm.toLowerCase()
+
+        const matchesSearch =
+          job.jobName?.toLowerCase().includes(searchLower) ||
+          job.jobNo?.toLowerCase().includes(searchLower) ||
+          job.ccNo?.includes(searchTerm) ||
+          traderName.toLowerCase().includes(searchLower)
+
+        const matchesStatus = filterStatus === "all" || job.status === filterStatus
+        const matchesTrader = filterTrader === "all" || job.traderId === filterTrader
+
+        return matchesSearch && matchesStatus && matchesTrader
+      })
+  }, [jobs, searchTerm, filterStatus, filterTrader, traders])
+
+  const totalItems = filteredJobs.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const paginatedJobs = filteredJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  const openDeleteModal = (id: string, name: string) => {
+    setJobToDelete({ id, name })
+    setDeleteModalOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!jobToDelete) return
+
+    try {
+      await fetch(`http://localhost:3000/api/jobs/${jobToDelete.id}`, {
+        method: "DELETE",
+      })
+      setJobs(prev => prev.filter(j => j.id !== jobToDelete.id))
+      setDeleteModalOpen(false)
+      setJobToDelete(null)
+    } catch (err) {
+      alert("ลบไม่สำเร็จ")
+    }
+  }
+
+  useEffect(() => {
+    const interval = setInterval(refreshData, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-lg text-gray-600">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-6 p-4 md:p-6 lg:p-2">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Projects</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {totalItems > 0 ? `มี ${totalItems} โครงการ` : "ไม่มีโครงการ"}
-          </p>
+          <h1 className="text-2xl md:text-3xl font-bold">Jobs</h1>
+          <p className="text-sm md:text-base text-muted-foreground">Manage Jobs</p>
         </div>
         <Link href="/project/new">
-          <Button className="w-full sm:w-auto bg-blue-700 hover:bg-green-600">
+          <Button className="bg-blue-700 hover:bg-green-600 w-full sm:w-auto dark:text-white cursor-pointer">
             <Plus className="mr-2 h-4 w-4" />
-            สร้างโครงการใหม่
+            Create New Job
           </Button>
         </Link>
       </div>
@@ -199,78 +228,45 @@ export default function ProjectsPage() {
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Filter className="h-5 w-5" />
-            <CardTitle className="text-lg">ตัวกรอง</CardTitle>
+            <CardTitle className="text-lg">Filter</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-3 items-center flex-wrap">
-            {/* ค้นหา */}
-            <div className="relative flex-1 min-w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="ค้นหาโครงการ, Trader..."
+                placeholder="ค้นหา Job Name Client..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
             </div>
 
-            {/* สถานะ */}
             <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
-              <SelectTrigger className="w-40 flex-shrink-0">
-                <SelectValue placeholder="สถานะ" />
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="ทุกสถานะ" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">ทุกสถานะ</SelectItem>
                 <SelectItem value="in_progress">กำลังดำเนินการ</SelectItem>
-                <SelectItem value="completed">เสร็จสิ้น</SelectItem>
+                <SelectItem value="completed">สมบูรณ์</SelectItem>
               </SelectContent>
             </Select>
 
-            {/* Trader */}
-            <Select value={filterTrader} onValueChange={setFilterTrader}>
-              <SelectTrigger className="w-40 flex-shrink-0">
-                <SelectValue placeholder="Trader" />
+            {/* <Select value={filterTrader} onValueChange={setFilterTrader}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="ทุก Trader" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">ทุก Trader</SelectItem>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                {traders.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
-
-            {/* วันที่ */}
-            <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "latest" | "oldest")}>
-              <SelectTrigger className="w-40 flex-shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="latest">ล่าสุดก่อน</SelectItem>
-                <SelectItem value="oldest">เก่าก่อน</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* งบประมาณ */}
-            <div className="flex gap-2 items-center flex-shrink-0">
-              <Input
-                type="number"
-                placeholder="งบ min"
-                value={budgetRange.min}
-                onChange={(e) => setBudgetRange({ ...budgetRange, min: e.target.value })}
-                className="w-25"
-              />
-              <span className="text-muted-foreground text-sm">-</span>
-              <Input
-                type="number"
-                placeholder="max"
-                value={budgetRange.max}
-                onChange={(e) => setBudgetRange({ ...budgetRange, max: e.target.value })}
-                className="w-25"
-              />
-            </div>
+            </Select> */}
           </div>
         </CardContent>
       </Card>
@@ -278,195 +274,194 @@ export default function ProjectsPage() {
       {/* ตาราง */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg md:text-xl">รายการโครงการ</CardTitle>
+          <CardTitle className="text-xl">List Jobs ({totalItems} list)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-semibold whitespace-nowrap">เลขที่โครงการ</th>
-                  <th className="text-left p-3 font-semibold whitespace-nowrap">ชื่อโครงการ</th>
-                  <th className="text-left p-3 font-semibold whitespace-nowrap">Trader</th>
-                  <th className="text-right p-3 font-semibold whitespace-nowrap">งบประมาณ</th>
-                  <th className="text-center p-3 font-semibold whitespace-nowrap">วันที่เริ่ม</th>
-                  <th className="text-center p-3 font-semibold whitespace-nowrap">วันที่สิ้นสุด</th>
-                  <th className="text-center p-3 font-semibold whitespace-nowrap">Duration</th>
-                  <th className="text-center p-3 font-semibold whitespace-nowrap">สถานะ</th>
-                  <th className="text-right p-3 font-semibold whitespace-nowrap">จัดการ</th>
+                <tr className="border-b bg-muted/100">
+                  <th className="text-center p-4 font-sm w-20">No.</th>
+                  <th className="text-left p-4 font-sm">Job Number</th>
+                  <th className="text-left p-4 font-sm">Job Name</th>
+                  <th className="text-left p-4 font-bold">CC No.</th>
+                  <th className="text-left p-4 font-bold">Project Code</th>
+                  <th className="text-left p-4 font-bold">Client Name</th>
+                  <th className="text-left p-4 font-bold">WA Number</th>
+                  <th className="text-left p-4 font-bold">Expteam Quotation</th>
+                  <th className="text-center p-4 font-bold">Start Date</th>
+                  <th className="text-center p-4 font-bold">End Date</th>
+                  <th className="text-center p-4 font-bold">Status</th>
+                  <th className="text-right p-4 font-bold">Manage</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedProjects.map((project) => {
-                  const totalBudget = project.totalBudget || 0;
-                  const duration = getDuration(project.startDate, project.endDate);
-                  const traderName = getTraderName(project);
-                  const { color, text, icon } = getStatusInfo(project.status);
+                {paginatedJobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="text-center py-16 text-muted-foreground">
+                      ไม่พบข้อมูล Job
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedJobs.map((job) => {
+                    const { color, text, icon } = getStatusInfo(job.status)
+                    const isCompleted = job.status?.toLowerCase() === "completed"
 
-                  return (
-                    <tr key={project.id} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="font-medium text-foreground">{project.projectNumber}</div>
-                      </td>
-                      <td className="p-3 min-w-48">
-                        <div className="font-medium truncate">{project.name}</div>
-                      </td>
-                      <td className="p-3 min-w-40">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Building2 className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                          <span className="truncate">{traderName}</span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-right whitespace-nowrap">
-                        <div className="font-semibold text-foreground">{formatCurrency(totalBudget)}</div>
-                      </td>
-                      <td className="p-3 text-center whitespace-nowrap text-sm">
-                        {project.startDate
-                          ? new Date(project.startDate).toLocaleDateString("th-TH", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })
-                          : "-"}
-                      </td>
-                      <td className="p-3 text-center whitespace-nowrap text-sm">
-                        {project.endDate
-                          ? new Date(project.endDate).toLocaleDateString("th-TH", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })
-                          : "-"}
-                      </td>
-                      <td className="p-3 text-center whitespace-nowrap">
-                        <span className="text-sm font-medium">{duration} วัน</span>
-                      </td>
-                      <td className="p-3 text-center whitespace-nowrap">
-                        <Badge className={`${color} text-white gap-1`}>
-                          {icon}
-                          <span className="hidden sm:inline">{text}</span>
-                        </Badge>
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="flex justify-end gap-1">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Link href={`/project/${project.id}`}>
-                                  <Button variant="outline" size="sm" className="text-blue-600 hover:bg-blue-50">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                </Link>
-                              </TooltipTrigger>
-                              <TooltipContent>ดูรายละเอียด</TooltipContent>
-                            </Tooltip>
+                    return (
+                      <tr key={job.id} className="border-b hover:bg-muted/30 transition-colors">
+                        <td className="p-4 text-center font-medium">
+                          {job.id}
+                        </td>
+                        <td className="p-4 font-medium">{job.jobNo || "-"}</td>
+                        <td className="p-4">
+                          <div className="font-medium whitespace-normal break-words max-w-xs line-clamp-2">{job.jobName || "-"}</div>
+                        </td>
+                        <td className="p-4">{job.ccNo || "-"}</td>
+                        <td className="p-4">{job.projectCode || "-"}</td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-slate-400" />
+                            <span className="truncate max-w-32">{getTraderName(job.traderId)}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">{job.waNumber || "-"}</td>
+                        <td className="p-4">{job.expteamQuotation || "-"}</td>
+                        <td className="p-4 text-center text-sm">
+                          {job.startDate ? new Date(job.startDate).toLocaleDateString("th-TH") : "-"}
+                        </td>
+                        <td className="p-4 text-center text-sm">
+                          {job.endDate ? new Date(job.endDate).toLocaleDateString("th-TH") : "-"}
+                        </td>
+                        <td className="p-4 text-center">
+                          <Badge className={`${color} flex items-center gap-1 w-fit mx-auto`}>
+                            {icon}
+                            <span>{text}</span>
+                          </Badge>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex justify-end gap-1">
+                            <TooltipProvider>
+                              {/* ปุ่มดูรายละเอียด – แสดงเสมอ */}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Link href={`/project/${job.id}`}>
+                                    <Button variant="outline" size="sm" className="text-blue-600 hover:bg-blue-50 cursor-pointer">
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </Link>
+                                </TooltipTrigger>
+                                <TooltipContent>View</TooltipContent>
+                              </Tooltip>
 
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Link href={`/project/${project.id}/edit`}>
-                                  <Button variant="outline" size="sm" className="text-yellow-600 hover:bg-yellow-50">
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                </Link>
-                              </TooltipTrigger>
-                              <TooltipContent>แก้ไข</TooltipContent>
-                            </Tooltip>
+                              {/* ✅ ปุ่มแก้ไข – ซ่อนเมื่อ completed */}
+                              {!isCompleted && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Link href={`/project/${job.id}/edit`}>
+                                      <Button variant="outline" size="sm" className="text-yellow-600 hover:bg-yellow-50 cursor-pointer">
+                                        <Edit className="h-4 w-4" />
+                                      </Button>
+                                    </Link>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Edit</TooltipContent>
+                                </Tooltip>
+                              )}
 
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-red-600 hover:bg-red-50"
-                                  onClick={() => handleDelete(project.id, project.name)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>ลบ</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                              {/* ✅ ปุ่มลบ – ซ่อนเมื่อ completed */}
+                              {!isCompleted && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="text-red-600 hover:bg-red-50 cursor-pointer"
+                                      onClick={() => openDeleteModal(job.id, job.jobName)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Delete</TooltipContent>
+                                </Tooltip>
+                              )}
+                            </TooltipProvider>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
 
           {/* Pagination */}
           {totalItems > 0 && (
-            <div className="flex flex-col gap-4 mt-6">
-              <div className="text-sm text-muted-foreground text-center sm:text-left">
-                แสดง {startIndex + 1}-{endIndex} จาก {totalItems} รายการ
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-sm text-muted-foreground">
+                แสดง {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, totalItems)} จาก {totalItems} รายการ
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
-                  <SelectTrigger className="w-full sm:w-32">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => p - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm whitespace-nowrap">หน้า {currentPage} / {totalPages}</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => p + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Select value={pageSize.toString()} onValueChange={v => setPageSize(Number(v))}>
+                  <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="5">5 รายการ</SelectItem>
                     <SelectItem value="10">10 รายการ</SelectItem>
                     <SelectItem value="20">20 รายการ</SelectItem>
                     <SelectItem value="50">50 รายการ</SelectItem>
                   </SelectContent>
                 </Select>
-
-                <div className="flex items-center justify-center gap-2 overflow-x-auto">
-                  <Button variant="outline" size="icon" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-
-                  <div className="flex gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      const pageNum = i + 1;
-                      return (
-                        <Button
-                          key={pageNum}
-                          variant={currentPage === pageNum ? "default" : "outline"}
-                          size="sm"
-                          className="w-9"
-                          onClick={() => goToPage(pageNum)}
-                        >
-                          {pageNum}
-                        </Button>
-                      );
-                    })}
-                    {totalPages > 5 && (
-                      <>
-                        <span className="px-2 text-sm text-muted-foreground">...</span>
-                        <Button
-                          variant={currentPage === totalPages ? "default" : "outline"}
-                          size="sm"
-                          className="w-9"
-                          onClick={() => goToPage(totalPages)}
-                        >
-                          {totalPages}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-
-                  <Button variant="outline" size="icon" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
               </div>
-            </div>
-          )}
-
-          {/* ไม่พบข้อมูล */}
-          {totalItems === 0 && (
-            <div className="text-center py-12">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium text-muted-foreground">ไม่พบข้อมูลโครงการ</p>
-              <p className="text-sm mt-1">ลองเปลี่ยนตัวกรองหรือสร้างโครงการใหม่</p>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Modal ลบ */}
+      <AlertDialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
+        <AlertDialogContent className="max-w-md border-2 border-red-200">
+          <AlertDialogHeader className="text-center pb-4">
+            <div className="mx-auto w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mb-4">
+              <Trash2 className="h-10 w-10 text-red-600" />
+            </div>
+            <AlertDialogTitle className="text-2xl font-bold text-red-700">
+              ลบ Job นี้หรือไม่?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-lg text-center mt-3">
+              ต้องการลบ Job
+              <span className="font-bold text-black"> {jobToDelete?.name}</span> ใช่หรือไม่?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex items-center justify-center gap-4 pt-4">
+            <AlertDialogCancel className="w-full sm:w-auto px-10 py-2.5 bg-gray-500 hover:bg-gray-600 text-white">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="w-full sm:w-auto px-10 py-2.5 bg-red-600 hover:bg-red-700"
+            >
+              Confirm Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
-  );
+  )
 }

@@ -67,7 +67,7 @@ export default function PositionPage() {
     <div className="container mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">จัดการตำแหน่ง (Positions)</h1>
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6 max-w-md">
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6 max-w-md dark:bg-black border border-whites">
         <h2 className="text-xl font-semibold mb-4">
           {editId ? 'แก้ไข' : 'เพิ่ม'} ตำแหน่ง
         </h2>
@@ -87,9 +87,9 @@ export default function PositionPage() {
           className="w-full p-2 border mb-3 rounded"
           required
         >
-          <option value="">เลือกแผนก</option>
+          <option value="" className='dark:bg-black'>เลือกแผนก</option>
           {departments.map((d) => (
-            <option key={d.id} value={d.id}>
+            <option key={d.id} value={d.id} className='dark:bg-black'>
               {d.name}
             </option>
           ))}
@@ -98,7 +98,7 @@ export default function PositionPage() {
         <div className="flex gap-2">
           <button
             type="submit"
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition cursor-pointer hover:dark:bg-green-600"
           >
             {editId ? 'อัปเดต' : 'เพิ่ม'}
           </button>
@@ -119,27 +119,27 @@ export default function PositionPage() {
         </div>
       </form>
 
-      <div className="bg-white shadow rounded overflow-hidden">
+      <div className="bg-white shadow rounded overflow-hidden dark:bg-black border border-whites">
         <table className="w-full">
-          <thead className="bg-gray-100">
+          <thead className="bg-gray-100 dark:bg-black">
             <tr>
               <th className="p-3 text-left">ID</th>
               <th className="p-3 text-left">ตำแหน่ง</th>
-              <th className="p-3 text-left">แผนก</th>
+              <th className="p-3 text-left ">แผนก</th>
               <th className="p-3 text-center">จัดการ</th>
             </tr>
           </thead>
           <tbody>
             {positions.map((pos) => (
-              <tr key={pos.id} className="border-t hover:bg-gray-50 transition">
+              <tr key={pos.id} className="border-t hover:bg-gray-50 transition hover:dark:bg-gray-700">
                 <td className="p-3">{pos.id}</td>
                 <td className="p-3">{pos.name}</td>
-                <td className="p-3">{getDeptName(pos.departmentId)}</td>
+                <td className="p-3 ">{getDeptName(pos.departmentId)}</td>
                 <td className="p-3 text-center">
                   <div className="flex items-center justify-center gap-2">
                     <button
                       onClick={() => handleEdit(pos)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-100 hover:text-green-700 transition-all duration-200 shadow-sm hover:shadow"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-500 hover:text-white transition-all duration-200 shadow-sm hover:shadow cursor-pointer"
                     >
                       <Edit2 className="w-4 h-4" />
                       แก้
@@ -147,7 +147,7 @@ export default function PositionPage() {
 
                     <button
                       onClick={() => handleDelete(pos.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 hover:text-red-700 transition-all duration-200 shadow-sm hover:shadow"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-400 hover:text-white transition-all duration-200 shadow-sm hover:shadow cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                       ลบ

@@ -60,7 +60,7 @@ export default function UserPage() {
     <div className="container mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">จัดการผู้ใช้ (Users)</h1>
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6 max-w-md">
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6 max-w-md dark:bg-black border border-whites">
         <h2 className="text-xl font-semibold mb-4">
           {editId ? 'แก้ไข' : 'เพิ่ม'} ผู้ใช้
         </h2>
@@ -107,9 +107,9 @@ export default function UserPage() {
         </div>
       </form>
 
-      <div className="bg-white shadow rounded overflow-hidden">
+      <div className="bg-white shadow rounded overflow-hidden dark:bg-black border border-whites">
         <table className="w-full">
-          <thead className="bg-gray-100">
+          <thead className="bg-gray-100 dark:bg-black border border-whites">
             <tr>
               <th className="p-3 text-left">ID</th>
               <th className="p-3 text-left">Username</th>
@@ -119,7 +119,7 @@ export default function UserPage() {
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className="border-t hover:bg-gray-50 transition">
+              <tr key={u.id} className="border-t hover:bg-gray-50 transition hover:dark:bg-slate-700">
                 <td className="p-3">{u.id}</td>
                 <td className="p-3">{u.username}</td>
                 <td className="p-3">{u.email}</td>

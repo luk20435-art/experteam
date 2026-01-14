@@ -1,462 +1,447 @@
+// app/job/new/page.tsx
+
 "use client"
 
-import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useData } from "@/src/contexts/data-context"
+import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Save, FileText, DollarSign, Calendar, Briefcase, Building2, Users, Mail, Check, ChevronsUpDown } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
-import type { Project, ProjectSection } from "@/src/types"
 import {
-  Combobox,
-  ComboboxButton,
-  ComboboxInput,
-  ComboboxOption,
-  ComboboxOptions,
-} from "@headlessui/react"
-import { cn } from "@/lib/utils"
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { ArrowLeft, Save, CheckCircle2, AlertCircle, Moon, Sun } from "lucide-react"
 
-export default function NewProjectPage() {
+interface Trader {
+  id: number
+  name: string
+}
+
+export default function NewJobPage() {
   const router = useRouter()
-  const { addProject, projects, clients } = useData()
-  const { toast } = useToast()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [traders, setTraders] = useState<Trader[]>([])
 
-  const [formData, setFormData] = useState({
+  const [openConfirm, setOpenConfirm] = useState(false)
+  const [openSuccess, setOpenSuccess] = useState(false)
+  const [openError, setOpenError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+
+  const [saveAsDraft, setSaveAsDraft] = useState(false)
+
+  const [form, setForm] = useState({
     jobName: "",
-    jobNo: "",
     projectCode: "",
-    jobCode: "",
-    contactNumber: "",
+    jobNo: "",
     ccNo: "",
-    traderId: "",
     waNumber: "",
     wrPoSrRoNumber: "",
     contactPerson: "",
+    contactNumber: "",
     contactEmail: "",
-    estimatedPrCost: "",
+    traderId: "",
     expteamQuotation: "",
-    status: "in_progress" as Project["status"],
+    estimatedPrCost: "",
     startDate: "",
     endDate: "",
-    description: "",
+    remark: "",
+    budgetMaterial: "",
+    budgetManPower: "",
+    budgetOp: "",
+    budgetIe: "",
+    budgetSupply: "",
+    budgetEngineer: "",
+    status: "in_progress" as "in_progress" | "completed",
   })
 
-  const [sectionBudgets, setSectionBudgets] = useState({
-    material: "",
-    manPower: "",
-    op: "",
-    ie: "",
-    supply: "",
-    engineer: "",
-  })
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
-  const calculateDuration = (start: string, end: string) => {
-    if (!start || !end) return 0
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-    const diffTime = endDate.getTime() - startDate.getTime()
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+  useEffect(() => {
+    fetch("http://localhost:3000/api/traders", { cache: "no-store" })
+      .then(r => r.json())
+      .then(res => {
+        const list = Array.isArray(res) ? res : res.data || []
+        setTraders(list)
+      })
+      .catch(() => {})
+  }, [])
+
+  const selectedTrader = traders.find(t => t.id === Number(form.traderId))
+
+  const validate = (strict: boolean = true) => {
+    if (strict) {
+      if (!form.jobName.trim()) return "กรุณากรอกชื่องาน"
+      if (!form.traderId) return "กรุณาเลือก Trader / Client"
+      if (!form.startDate) return "กรุณาเลือกวันที่เริ่ม"
+      if (!form.estimatedPrCost || Number(form.estimatedPrCost) <= 0) return "กรุณากรอก Estimated PR Cost ให้มากกว่า 0"
+    }
+    return null
   }
 
-  // ฟังก์ชันหลักสำหรับบันทึกโครงการ
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>, saveAsDraft: boolean = false) => {
-    e.preventDefault()
-
-    // ตรวจสอบข้อมูลสำคัญ
-    if (!formData.jobName?.trim()) {
-      toast({ title: "กรุณากรอก Job Name", variant: "destructive" })
+  const handleSave = (asDraft: boolean) => {
+    const error = validate(!asDraft)
+    if (error) {
+      setErrorMessage(error)
+      setOpenError(true)
       return
     }
-    if (!formData.jobCode?.trim()) {
-      toast({ title: "กรุณากรอก Project Code", variant: "destructive" })
-      return
-    }
+    setSaveAsDraft(asDraft)
+    setOpenConfirm(true)
+  }
 
-    // ตรวจสอบวันที่
-    if (formData.startDate && formData.endDate) {
-      const start = new Date(formData.startDate)
-      const end = new Date(formData.endDate)
-      if (end < start) {
-        toast({ title: "วันที่สิ้นสุดต้องไม่ก่อนวันเริ่มต้น", variant: "destructive" })
-        return
+  const confirmSave = async () => {
+    setLoading(true)
+
+    try {
+      const res = await fetch("http://localhost:3000/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobName: form.jobName.trim(),
+          projectCode: form.projectCode || null,
+          jobNo: form.jobNo || null,
+          ccNo: form.ccNo || null,
+          waNumber: form.waNumber || null,
+          wrPoSrRoNumber: form.wrPoSrRoNumber || null,
+          contactPerson: form.contactPerson || null,
+          contactNumber: form.contactNumber || null,
+          contactEmail: form.contactEmail || null,
+          traderId: form.traderId ? Number(form.traderId) : null,
+          expteamQuotation: form.expteamQuotation || null,
+          estimatedPrCost: Number(form.estimatedPrCost) || 0,
+          startDate: form.startDate || null,
+          endDate: form.endDate || null,
+          remark: form.remark || null,
+          budgetMaterial: Number(form.budgetMaterial) || 0,
+          budgetManPower: Number(form.budgetManPower) || 0,
+          budgetOp: Number(form.budgetOp) || 0,
+          budgetIe: Number(form.budgetIe) || 0,
+          budgetSupply: Number(form.budgetSupply) || 0,
+          budgetEngineer: Number(form.budgetEngineer) || 0,
+          status: form.status,
+          requesterId: "USR001",
+          originatorId: "USR002",
+          storeId: "ST001",
+          approverId: "USR003",
+          isDraft: saveAsDraft,
+        }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.message || "สร้างงานไม่สำเร็จ")
       }
+
+      setOpenConfirm(false)
+      setOpenSuccess(true)
+      setTimeout(() => router.push("/project"), 1500)
+    } catch (err: any) {
+      setOpenConfirm(false)
+      setErrorMessage(err.message || "เกิดข้อผิดพลาด")
+      setOpenError(true)
+    } finally {
+      setLoading(false)
     }
-
-    const projectNumber = `PROJ-${new Date().getFullYear()}-${String(projects.length + 1).padStart(3, "0")}`
-
-    const sections: ProjectSection[] = [
-      { id: `sec-${Date.now()}-1`, name: "Material", budget: Number(sectionBudgets.material) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-2`, name: "Man Power", budget: Number(sectionBudgets.manPower) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-3`, name: "OP", budget: Number(sectionBudgets.op) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-4`, name: "IE", budget: Number(sectionBudgets.ie) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-5`, name: "Supply", budget: Number(sectionBudgets.supply) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-      { id: `sec-${Date.now()}-6`, name: "Engineer", budget: Number(sectionBudgets.engineer) || 0, spent: 0, progress: 0, items: [], remarks: "" },
-    ]
-
-    const totalBudget = sections.reduce((sum, sec) => sum + sec.budget, 0)
-    const duration = calculateDuration(formData.startDate, formData.endDate)
-    const selectedClient = clients.find(c => c.id === formData.traderId)
-    const traderName = selectedClient ? selectedClient.name : "ไม่ระบุ Trader"
-
-    const newProject: Project = {
-      id: `proj-${Date.now()}`,
-      projectNumber,
-      name: formData.jobName.trim(),
-      projectName: formData.jobName.trim(),
-      description: formData.description || "",
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      status: saveAsDraft ? "ร่าง" : "รออนุมัติ",
-      totalBudget,
-      totalSpent: 0,
-      overallProgress: 0,
-      sections,
-      manager: "",
-      department: "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      code: formData.jobCode.trim(),
-      duration,
-      jobNo: formData.jobNo,
-      trader: traderName,
-      ccNo: formData.ccNo,
-      waNumber: formData.waNumber,
-      wrPoSrRoNumber: formData.wrPoSrRoNumber,
-      expteamQuotation: formData.expteamQuotation,
-      contactPerson: formData.contactPerson,
-      contactEmail: formData.contactEmail,
-      estimatedPrCost: formData.estimatedPrCost || "0",
-      waName: formData.waNumber || "",
-      paymentTerms: "",
-      estimatedCost: formData.estimatedPrCost || "0",
-    }
-
-    addProject(newProject)
-    toast({
-      title: saveAsDraft ? "บันทึกร่างสำเร็จ!" : "ส่งโครงการสำเร็จ!",
-      description: `เลขที่ ${projectNumber}`,
-    })
-    setTimeout(() => router.push("/project"), 1200)
   }
 
-  const sectionLabels: { [key: string]: { label: string; icon: React.ReactNode } } = {
-    material: { label: "Meterial", icon: <FileText className="w-5 h-5" /> },
-    manPower: { label: "Man Power", icon: <Users className="w-5 h-5" /> },
-    op: { label: "OP", icon: <Briefcase className="w-5 h-5" /> },
-    ie: { label: "IE", icon: <FileText className="w-5 h-5" /> },
-    supply: { label: "Supply", icon: <Building2 className="w-5 h-5" /> },
-    engineer: { label: "Engineer", icon: <Users className="w-5 h-5" /> },
-  }
-
-  function TraderCombobox() {
-    const [query, setQuery] = useState("")
-    const filtered = query === ""
-      ? clients.filter(c => c.status === "active")
-      : clients.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
-
-    return (
-      <div className="relative">
-        <Combobox
-          value={formData.traderId}
-          onChange={(v: string | null) => setFormData(prev => ({ ...prev, traderId: v ?? "" }))}
-          nullable
-        >
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Building2 className="h-5 w-5 text-slate-400" />
-            </div>
-            <ComboboxInput
-              className={cn(
-                "pl-10 pr-10 w-full h-10 rounded-md border border-input bg-background text-sm",
-                "focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all",
-                "placeholder:text-slate-400"
-              )}
-              displayValue={(id: string) => clients.find(c => c.id === id)?.name ?? ""}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="เลือก Trader"
-            />
-            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
-              <ChevronsUpDown className="h-4 w-4 text-slate-400" />
-            </ComboboxButton>
-          </div>
-          <ComboboxOptions className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-            {filtered.length === 0 ? (
-              <div className="px-4 py-2 text-slate-500">ไม่พบ Trader</div>
-            ) : (
-              filtered.map((client) => (
-                <ComboboxOption
-                  key={client.id}
-                  value={client.id}
-                  className={({ active }) => cn("relative cursor-pointer select-none py-2 pl-10 pr-4", active ? "bg-indigo-600 text-white" : "text-gray-900")}
-                >
-                  {({ selected, active }) => (
-                    <>
-                      <span className={cn("block truncate", selected && "font-medium")}>
-                        {client.name}
-                      </span>
-                      {selected && (
-                        <span className={cn("absolute inset-y-0 left-0 flex items-center pl-3", active ? "text-white" : "text-indigo-600")}>
-                          <Check className="h-5 w-5" />
-                        </span>
-                      )}
-                    </>
-                  )}
-                </ComboboxOption>
-              ))
-            )}
-          </ComboboxOptions>
-        </Combobox>
-      </div>
-    )
-  }
+  if (!mounted) return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
-      <div className="w-full px-4 py-4 md:py-6 space-y-6">
-
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/project")}
-                className="hover:bg-slate-100"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Increase (Job)</h1>
-                <p className="text-sm text-slate-600">กรอกข้อมูลโครงการ</p>
+    <>
+      {/* Modals */}
+      <AlertDialog open={openConfirm} onOpenChange={setOpenConfirm}>
+        <AlertDialogContent className="dark:bg-slate-900 dark:border-slate-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-slate-100">{saveAsDraft ? "Confirm draft record.?" : "Confirm the creation of a new job.?"}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 py-4 text-left dark:text-slate-300">
+                <p><strong>Job Name :</strong> {form.jobName}</p>
+                <p><strong>Trader :</strong> {selectedTrader?.name || "-"}</p>
+                <p><strong>Estimated PR Cost :</strong> {Number(form.estimatedPrCost).toLocaleString()} บาท</p>
+                <p><strong>Start Date :</strong> {form.startDate}</p>
+                {saveAsDraft && <p className="text-yellow-600 dark:text-yellow-400 font-medium">This work will be saved as a draft.</p>}
               </div>
-            </div>
-            {/* ปุ่มบันทึก */}
-            <div className="flex justify-end gap-3 pt-6">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 sm:flex-none bg-yellow-400 hover:bg-yellow-600 hover:text-white"
-                onClick={(e) => handleSubmit(e as any, true)}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                บันทึกร่าง
-              </Button>
-              <Button type="submit" className="flex-1 sm:flex-none bg-blue-600 hover:bg-green-600">
-                <Save className="h-4 w-4 mr-2" />
-                บันทึก
-              </Button>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:hover:bg-red-400 dark:text-slate-100 dark:border-slate-700 cursor-pointer dark:bg-red-600">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSave} className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 cursor-pointer dark:text-white">
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={openSuccess}>
+        <AlertDialogContent className="dark:bg-slate-900 dark:border-slate-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-3 text-green-600 dark:text-green-400 text-2xl">
+              <CheckCircle2 className="h-8 w-8" />
+              {saveAsDraft ? "บันทึกร่างสำเร็จ!" : "สร้างงานสำเร็จ!"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-lg dark:text-slate-300">
+              กำลังพาคุณกลับไปหน้ารายการ...
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={openError} onOpenChange={setOpenError}>
+        <AlertDialogContent className="dark:bg-slate-900 dark:border-slate-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+              <AlertCircle className="h-5 w-5" />
+              เกิดข้อผิดพลาด
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base dark:text-slate-300">
+              {errorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction className="dark:bg-green-800 dark:text-white cursor-pointer dark:hover:bg-slate-700">ตกลง</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <div className="min-h-screen bg-gray-50 dark:bg-black transition-colors">
+        <div className="bg-white dark:bg-black shadow-sm border-b dark:border-white-700 sticky top-0 z-10">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+                <Button variant="outline" size="icon" onClick={() => router.back()} className="flex-shrink-0 dark:hover:bg-slate-800 cursor-pointer">
+                  <ArrowLeft className="h-5 sm:h-6 w-5 sm:w-6 dark:text-slate-400  cursor-pointer" />
+                </Button>
+                <h1 className="text-2xl sm:text-3xl lg:text-2xl font-bold text-gray-900 dark:text-slate-100">
+                  Create New Job
+                </h1>
+              </div>
+
+              <div className="flex gap-3 w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => handleSave(true)}
+                  disabled={loading}
+                  className="h-9.5 flex-1 sm:flex-initial dark:bg-yellow-500 bg-yellow-500 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-100 cursor-pointer"
+                >
+                  <Save className="mr-2 h-5 w-5" />
+                  Draft
+                </Button>
+
+                <Button
+                  onClick={() => handleSave(false)}
+                  disabled={loading}
+                  className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white font-medium flex-1 sm:flex-initial cursor-pointer"
+                >
+                  <Save className="mr-2 h-5 w-5" />
+                  <span className="text-sm sm:text-base">{loading ? "Saving..." : "Save"}</span>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
 
-        <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-12 ">
+          <Card className="dark:bg-black dark:border-white-800">
+           
 
-          {/* ข้อมูลโครงการ */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Project information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-
-              {/* Row 1 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <CardContent className="p-4 sm:p-6 lg:p-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 <div className="space-y-2">
-                  <Label>Job Name <span className="text-red-500">*</span></Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">Job Name <span className="text-red-600">*</span></Label>
                   <Input
-                    placeholder="Job Name"
-                    value={formData.jobName}
-                    onChange={e => setFormData(prev => ({ ...prev, jobName: e.target.value }))}
-                    required
+                    placeholder="Job Name "
+                    value={form.jobName}
+                    onChange={e => setForm({ ...form, jobName: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Project Code <span className="text-red-500">*</span></Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">Job Number<span className="text-red-600">*</span></Label>
+                  <Input
+                    placeholder="Job Number"
+                    value={form.jobNo}
+                    onChange={e => setForm({ ...form, jobNo: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Project Code <span className="text-red-600">*</span></Label>
                   <Input
                     placeholder="Project Code"
-                    value={formData.jobCode}
-                    onChange={e => setFormData(prev => ({ ...prev, jobCode: e.target.value }))}
-                    required
+                    value={form.projectCode}
+                    onChange={e => setForm({ ...form, projectCode: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Job No.</Label>
-                  <Input
-                    placeholder="Job No."
-                    value={formData.jobNo}
-                    onChange={e => setFormData(prev => ({ ...prev, jobNo: e.target.value }))}
-                  />
-                </div>
-              </div>
 
-              {/* Row 2 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>CC No.</Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">CC No.<span className="text-red-600">*</span></Label>
                   <Input
                     placeholder="CC No."
-                    value={formData.ccNo}
-                    onChange={e => setFormData(prev => ({ ...prev, ccNo: e.target.value }))}
+                    value={form.ccNo}
+                    onChange={e => setForm({ ...form, ccNo: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>WA Number</Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">Client Name <span className="text-red-600">*</span></Label>
+                  <Select value={form.traderId} onValueChange={v => setForm({ ...form, traderId: v })}>
+                    <SelectTrigger className="w-full text-sm sm:text-base dark:bg-slate-950 dark:bg-black dark:border-white-800">
+                      <SelectValue placeholder="Client Name" />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
+                      {traders.map(t => (
+                        <SelectItem key={t.id} value={String(t.id)} className="dark:text-slate-100">{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">WA Number</Label>
                   <Input
                     placeholder="WA Number"
-                    value={formData.waNumber}
-                    onChange={e => setFormData(prev => ({ ...prev, waNumber: e.target.value }))}
+                    value={form.waNumber}
+                    onChange={e => setForm({ ...form, waNumber: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-slate-950 dark:bg-black dark:border-white-800"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>WR/PO/SR/RO Number</Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">WR/PO/SR/RO Number</Label>
                   <Input
                     placeholder="WR/PO/SR/RO"
-                    value={formData.wrPoSrRoNumber}
-                    onChange={e => setFormData(prev => ({ ...prev, wrPoSrRoNumber: e.target.value }))}
+                    value={form.wrPoSrRoNumber}
+                    onChange={e => setForm({ ...form, wrPoSrRoNumber: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
                   />
                 </div>
-              </div>
 
-              {/* Row 3 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>Contact Person</Label>
-                  <Input
-                    placeholder="Contact Person"
-                    value={formData.contactPerson}
-                    onChange={e => setFormData(prev => ({ ...prev, contactPerson: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Number</Label>
-                  <Input
-                    placeholder="Contact Number"
-                    value={formData.contactNumber}
-                    onChange={e => setFormData(prev => ({ ...prev, contactNumber: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      type="email"
-                      placeholder="email@example.com"
-                      value={formData.contactEmail}
-                      onChange={e => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 4 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Trader</Label>
-                  <TraderCombobox />
-                </div>
-                <div className="space-y-2">
-                  <Label>Expteam Quotation</Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">Expteam Quotation</Label>
                   <Input
                     placeholder="Expteam Quotation"
-                    value={formData.expteamQuotation}
-                    onChange={e => setFormData(prev => ({ ...prev, expteamQuotation: e.target.value }))}
+                    value={form.expteamQuotation}
+                    onChange={e => setForm({ ...form, expteamQuotation: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Estimated PR Cost</Label>
+                  <Label className="text-sm font-medium dark:text-slate-200">Contact Person</Label>
+                  <Input
+                    placeholder="Contact Person"
+                    value={form.contactPerson}
+                    onChange={e => setForm({ ...form, contactPerson: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Contact Number</Label>
+                  <Input
+                    placeholder="Contact Number"
+                    value={form.contactNumber}
+                    onChange={e => setForm({ ...form, contactNumber: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Contact Email</Label>
+                  <Input
+                    placeholder="Contact Email"
+                    type="email"
+                    value={form.contactEmail}
+                    onChange={e => setForm({ ...form, contactEmail: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Estimated PR Cost</Label>
                   <Input
                     placeholder="Estimated PR Cost"
-                    value={formData.estimatedPrCost}
-                    onChange={e => setFormData(prev => ({ ...prev, estimatedPrCost: e.target.value }))}
+                    type="number"
+                    value={form.estimatedPrCost}
+                    onChange={e => setForm({ ...form, estimatedPrCost: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Start Date <span className="text-red-600">*</span></Label>
+                  <Input
+                    type="date"
+                    value={form.startDate}
+                    onChange={e => setForm({ ...form, startDate: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">End Date<span className="text-red-600">*</span></Label>
+                  <Input
+                    type="date"
+                    value={form.endDate}
+                    onChange={e => setForm({ ...form, endDate: e.target.value })}
+                    className="text-sm sm:text-base dark:bg-black dark:border-white-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Status<span className="text-red-600">*</span></Label>
+                  <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as any })}>
+                    <SelectTrigger className="w-full h-14 dark:bg-black dark:border-white-800 dark:text-slate-100">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
+                      <SelectItem value="in_progress" className="dark:text-slate-100">In Progress</SelectItem>
+                      <SelectItem value="completed" className="dark:text-slate-100">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* หมายเหตุ */}
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
+                  <Label className="text-sm font-medium dark:text-slate-200">Remark</Label>
+                  <Textarea
+                    rows={4}
+                    placeholder="รายละเอียดเพิ่มเติม..."
+                    value={form.remark}
+                    onChange={e => setForm({ ...form, remark: e.target.value })}
+                    className="text-sm sm:text-base resize-none dark:bg-black dark:border-white-800 dark:text-slate-100"
                   />
                 </div>
               </div>
-
-              {/* Row 5 - วันที่ */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Start Date</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      type="date"
-                      value={formData.startDate}
-                      onChange={e => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>End Date</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      type="date"
-                      value={formData.endDate}
-                      onChange={e => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* รายละเอียด */}
-              <div className="space-y-2">
-                <Label>Remark</Label>
-                <Textarea
-                  placeholder="รายละเอียดเพิ่มเติม..."
-                  value={formData.description}
-                  onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                />
-              </div>
             </CardContent>
           </Card>
-
-          {/* งบประมาณแต่ละส่วน */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                งบประมาณแต่ละส่วน
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.keys(sectionBudgets).map((key) => (
-                  <div key={key} className="space-y-2 p-4 bg-slate-50 rounded-lg border">
-                    <Label className="flex items-center gap-2 font-medium">
-                      {sectionLabels[key].icon}
-                      {sectionLabels[key].label}
-                    </Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600">฿</span>
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={(sectionBudgets as any)[key]}
-                        onChange={(e) => setSectionBudgets(prev => ({ ...prev, [key]: e.target.value }))}
-                        className="pl-8 h-10"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </form>
+        </div>
       </div>
-    </div>
+    </>
   )
 }

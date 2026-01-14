@@ -1,108 +1,141 @@
-// app/client/page.tsx
 "use client"
 
-import { useData } from "@/src/contexts/data-context"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Eye, Edit, Trash2, Search } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
-import { useState, useMemo } from "react"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { cn } from "../lib/utils"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Eye, Edit, Trash2, Search, ChevronLeft, ChevronRight } from "lucide-react"
+import { useRouter } from "next/navigation"
+import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction
+} from "@/components/ui/alert-dialog"
+import { toast } from "@/components/ui/use-toast"
 
-export default function ClientsPage() {
-  const { clients, deleteClient } = useData()
+interface Trader {
+  id: string
+  traderCode: string
+  name: string
+  contactPerson: string
+  phone: string
+  email?: string
+  address?: string
+  taxId?: string
+  isActive: boolean
+}
+
+export default function TraderPage() {
+  const router = useRouter()
+  const [traders, setTraders] = useState<Trader[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [page, setPage] = useState(1)
-  const itemsPerPage = 10
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
 
-  // ป้องกัน error
-  if (!clients || !Array.isArray(clients)) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-xl text-slate-600">กำลังโหลดข้อมูลลูกค้า...</p>
-        </div>
-      </div>
-    )
+  const fetchTraders = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch("http://localhost:3000/api/traders", { cache: "no-store" })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      const list = Array.isArray(data) ? data : data.data || []
+
+      const mapped: Trader[] = list.map((t: any) => ({
+        id: t.id,
+        traderCode: t.traderCode || "-",
+        name: t.name || "ไม่มีชื่อ",
+        contactPerson: t.contactPerson || "-",
+        phone: t.phone || "-",
+        email: t.email || "-",
+        address: t.address || "-",
+        taxId: t.taxId || "-",
+        isActive: t.isActive ?? true
+      }))
+      setTraders(mapped)
+    } catch (err) {
+      toast({ title: "โหลดข้อมูล Trader ไม่สำเร็จ", variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
   }
 
+  useEffect(() => {
+    fetchTraders()
+  }, [])
+
   // ค้นหา
-  const filteredClients = useMemo(() => {
-    return clients.filter(client =>
-      client.name.toLowerCase().includes(search.toLowerCase()) ||
-      client.clientId.toLowerCase().includes(search.toLowerCase()) ||
-      client.contactPerson.toLowerCase().includes(search.toLowerCase()) ||
-      client.contactNumber.includes(search)
+  const filtered = useMemo(() => {
+    return traders.filter(t =>
+      t.name.toLowerCase().includes(search.toLowerCase()) ||
+      t.traderCode.toLowerCase().includes(search.toLowerCase()) ||
+      t.contactPerson.toLowerCase().includes(search.toLowerCase()) ||
+      t.phone.includes(search)
     )
-  }, [clients, search])
+  }, [traders, search])
 
   // Pagination
-  const totalPages = Math.ceil(filteredClients.length / itemsPerPage)
-  const paginatedClients = filteredClients.slice((page - 1) * itemsPerPage, page * itemsPerPage)
+  const totalItems = filtered.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const startIndex = (currentPage - 1) * pageSize + 1
+  const endIndex = Math.min(currentPage * pageSize, totalItems)
+  const paginated = filtered.slice(startIndex - 1, endIndex)
 
-  // ถ้ายังไม่มีลูกค้า
-  if (clients.length === 0) {
+  // Reset page เมื่อ search หรือ pageSize เปลี่ยน
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, pageSize])
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page)
+    }
+  }
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8">
-        <div className="max-w-7xl mx-auto text-center py-20">
-          <div className="bg-gray-200 border-2 border-dashed rounded-xl w-32 h-32 mx-auto mb-8" />
-          <h2 className="text-3xl font-bold text-slate-700 mb-4">ยังไม่มีลูกค้า</h2>
-          <p className="text-slate-600 mb-8">เริ่มต้นด้วยการเพิ่มลูกค้าแรกของคุณ</p>
-          <Link href="/client/add">
-            <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
-              <Plus className="mr-2 h-5 w-5" />
-              เพิ่มลูกค้าใหม่
-            </Button>
-          </Link>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-lg">กำลังโหลดข้อมูล Trader...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <>
-
-      <div className="space-y-4 md:space-y-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-black">
+      <div className="max-w-full mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6 dark:bg-black">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Clients</h1>
-            <p className="text-slate-600 mt-2">
-              ทั้งหมด {clients.length} รายการ {search && `• พบ ${filteredClients.length} รายการ`}
+            <h1 className="text-3xl font-bold">Trader</h1>
+            <p className="text-muted-foreground mt-1">
+              ทั้งหมด {traders.length} รายการ {search && `• พบ ${filtered.length} รายการ`}
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            <Link href="/client/add" className="flex-1 sm:flex-none">
-              <Button className="w-full bg-blue-600 hover:bg-green-500 cursor-pointer">
-                <Plus className="mr-2 h-4 w-4" />
-                Add New Clients
-              </Button>
-            </Link>
-          </div>
+          <Link href="/client/add">
+            <Button className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto dark:text-white cursor-pointer">
+              <Plus className="h-5 w-5 mr-2" />
+              Add New Trader
+            </Button>
+          </Link>
         </div>
 
-        {/* ตัวกรอง */}
-        <Card>
+        {/* ค้นหา */}
+        <Card className="mb-6">
           <CardContent className="pt-6">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-              <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
-                <div className="relative flex-1 min-w-0">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="ค้นหาชื่อ, ID, ผู้ติดต่อ, เบอร์..."
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value)
-                      setPage(1)
-                    }}
-                    className="pl-10 w-full"
-                  />
-                </div>
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="ค้นหาชื่อ, รหัส Trader, ผู้ติดต่อ, เบอร์..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10"
+              />
             </div>
           </CardContent>
         </Card>
@@ -110,108 +143,202 @@ export default function ClientsPage() {
         {/* ตาราง */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg md:text-xl">รายการ PO ทั้งหมด</CardTitle>
+            <CardTitle>List All Trader</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <div className="inline-block min-w-full align-middle">
-                <Table>
-                  <TableHeader>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-20">No.</TableHead>
+                    <TableHead>Client Name</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead>City</TableHead>
+                    <TableHead>Contact Person</TableHead>
+                    <TableHead className="hidden md:table-cell">Contact Number</TableHead>
+                    <TableHead className="hidden lg:table-cell">Email</TableHead>
+                    <TableHead className="hidden lg:table-cell">Registration Date</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-center">Manage</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginated.length === 0 ? (
                     <TableRow>
-                      <TableHead className="font-bold">Client ID</TableHead>
-                      <TableHead className="font-bold">ชื่อลูกค้า</TableHead>
-                      <TableHead className="font-bold hidden sm:table-cell">ผู้ติดต่อ</TableHead>
-                      <TableHead className="font-bold hidden md:table-cell">เบอร์โทร</TableHead>
-                      <TableHead className="font-bold hidden lg:table-cell">อีเมล</TableHead>
-                      <TableHead className="font-bold text-center">สถานะ</TableHead>
-                      <TableHead className="font-bold text-center">จัดการ</TableHead>
+                      <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                        {search ? "ไม่พบข้อมูลที่ค้นหา" : "ยังไม่มี Trader"}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedClients.map((client) => (
-                      <TableRow key={client.id} className="hover:bg-slate-50 transition-colors">
-                        <TableCell className="font-medium">{client.clientId}</TableCell>
-                        <TableCell className="font-medium">{client.name}</TableCell>
-                        <TableCell className="hidden sm:table-cell">{client.contactPerson}</TableCell>
-                        <TableCell className="hidden md:table-cell">{client.contactNumber}</TableCell>
-                        <TableCell className="hidden lg:table-cell truncate max-w-xs">
-                          {client.contactEmail || "-"}
-                        </TableCell>
+                  ) : (
+                    paginated.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell>{t.id}</TableCell>
+                        <TableCell className="font-medium">{t.name}</TableCell>
+                        <TableCell>{t.address || "-"}</TableCell>
+                        <TableCell>-</TableCell>
+                        <TableCell>{t.contactPerson}</TableCell>
+                        <TableCell className="hidden md:table-cell">{t.phone}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{t.email || "-"}</TableCell>
+                        <TableCell className="hidden lg:table-cell">-</TableCell>
                         <TableCell className="text-center">
-                          <Badge
-                            className={cn(
-                              "px-3 py-1 text-xs font-semibold rounded-full",
-                              client.status === "active"
-                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                : "bg-rose-100 text-rose-800 border border-rose-200"
-                            )}
-                          >
-                            {client.status === "active" ? "ใช้งานอยู่" : "ปิดใช้งาน"}
+                          <Badge className={t.isActive ? "bg-green-600 text-white" : "bg-red-400 text-white"}>
+                            {t.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2 justify-center">
-                            <Link href={`/client/${client.id}`}>
-                              <Button size="sm" variant="ghost">
-                                <Eye className="h-4 w-4" />
+                          <div className="flex items-center justify-center gap-2">
+                            <Link href={`/client/${t.id}`}>
+                              <Button variant="outline" size="icon" className="h-8 w-8 cursor-pointer">
+                                <Eye className="h-4 w-4 text-blue-600" />
                               </Button>
                             </Link>
-                            <Link href={`/client/${client.id}/edit`}>
-                              <Button size="sm" variant="ghost">
-                                <Edit className="h-4 w-4" />
+                            <Link href={`/client/${t.id}/edit`}>
+                              <Button variant="outline" size="icon" className="h-8 w-8 cursor-pointer">
+                                <Edit className="h-4 w-4 text-yellow-600" />
                               </Button>
                             </Link>
-                            <Link href={`/client/${client.id}/delete`}>
-                              <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </Link>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="icon" className="h-8 w-8 text-red-600 cursor-pointer">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>ยืนยันการลบ Trader</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    คุณแน่ใจหรือไม่ที่จะลบ "<strong>{t.name}</strong>" นี้อย่างถาวร?
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={async () => {
+                                      try {
+                                        const res = await fetch(`http://localhost:3000/api/traders/${t.id}`, {
+                                          method: "DELETE",
+                                        })
+                                        if (!res.ok) throw new Error()
+                                        setTraders(prev => prev.filter(tr => tr.id !== t.id))
+                                        toast({ title: "ลบ Trader สำเร็จ" })
+                                      } catch {
+                                        toast({ title: "ลบ Trader ไม่สำเร็จ", variant: "destructive" })
+                                      }
+                                    }}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    ลบ
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex justify-center gap-2 mt-8">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  ก่อนหน้า
-                </Button>
-                <div className="flex items-center gap-2">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                    <Button
-                      key={p}
-                      variant={page === p ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPage(p)}
-                    >
-                      {p}
-                    </Button>
-                  ))}
+            {/* Pagination & Page Size */}
+            {totalItems > 0 && (
+              <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                {/* ซ้าย: แสดงจำนวน */}
+                <div className="text-sm text-muted-foreground order-2 sm:order-1">
+                  แสดง {startIndex} - {endIndex} จาก {totalItems} รายการ
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                >
-                  ถัดไป
-                </Button>
+
+                {/* ขวา: เลือกจำนวน + Pagination */}
+                <div className="flex items-center gap-4 order-1 sm:order-2">
+                  <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10 รายการ</SelectItem>
+                      <SelectItem value="20">20 รายการ</SelectItem>
+                      <SelectItem value="50">50 รายการ</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+
+                    {totalPages <= 7 ? (
+                      Array.from({ length: totalPages }, (_, i) => (
+                        <Button
+                          key={i + 1}
+                          variant={currentPage === i + 1 ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => goToPage(i + 1)}
+                        >
+                          {i + 1}
+                        </Button>
+                      ))
+                    ) : (
+                      <>
+                        <Button
+                          variant={currentPage === 1 ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => goToPage(1)}
+                        >
+                          1
+                        </Button>
+
+                        {currentPage > 4 && <span className="px-3 text-muted-foreground">...</span>}
+
+                        {Array.from({ length: 3 }, (_, i) => {
+                          const pageNum = currentPage - 1 + i
+                          if (pageNum <= 1 || pageNum >= totalPages) return null
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => goToPage(pageNum)}
+                            >
+                              {pageNum}
+                            </Button>
+                          )
+                        })}
+
+                        {currentPage < totalPages - 3 && <span className="px-3 text-muted-foreground">...</span>}
+
+                        {totalPages > 1 && (
+                          <Button
+                            variant={currentPage === totalPages ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => goToPage(totalPages)}
+                          >
+                            {totalPages}
+                          </Button>
+                        )}
+                      </>
+                    )}
+
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-    </>
-
+    </div>
   )
 }

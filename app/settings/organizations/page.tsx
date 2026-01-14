@@ -32,10 +32,10 @@ export default function OrganizationSettings() {
   ]
 
   const colorClasses = {
-    blue: "bg-blue-500/10 text-blue-600 border-blue-200",
-    green: "bg-green-500/10 text-green-600 border-green-200",
-    purple: "bg-purple-500/10 text-purple-600 border-purple-200",
-    amber: "bg-amber-500/10 text-amber-600 border-amber-200",
+    blue: "bg-black text-blue-600 border-white-700",
+    green: "bg-black0 text-green-600 border-white-700",
+    purple: "bg-black text-purple-600 border-white-700",
+    amber: "bg-black text-amber-600 border-white-700",
   }
 
   const handleFieldChange = (id, value) => {
@@ -94,7 +94,7 @@ export default function OrganizationSettings() {
           </div>
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/90 hover:shadow-lg text-white px-6 py-2.5 rounded-lg font-medium transition-all"
+            className="flex items-center gap-2 bg-green-600 cursor-pointer hover:dark:bg-slate-400 to-primary/90 hover:shadow-lg text-white px-6 py-2.5 rounded-lg font-medium transition-all"
           >
             <Edit2 className="h-4 w-4" />
             แก้ไข
@@ -107,7 +107,7 @@ export default function OrganizationSettings() {
             <img src={logoPreview} alt="Organization Logo" className="h-full w-full object-contain p-4" />
           </div>
           <div className="flex-1">
-            <h2 className="text-3xl font-bold">{fields.find(f => f.key === "orgName")?.value}</h2>
+            <h2 className="text-3xl font-bold ">{fields.find(f => f.key === "orgName")?.value}</h2>
             <p className="text-lg text-muted-foreground mt-1">
               {fields.find(f => f.key === "orgCode")?.value}
             </p>
@@ -127,10 +127,10 @@ export default function OrganizationSettings() {
             return (
               <div key={field.id} className={`border-2 rounded-xl p-4 ${colorClass} bg-opacity-50`}>
                 <div className="flex items-start gap-3">
-                  {Icon && <Icon className="h-5 w-5 flex-shrink-0 mt-0.5" />}
+                  {Icon && <Icon className="h-5 w-5 flex-shrink-0 mt-0.5 " />}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold opacity-75">{field.label}</p>
-                    <p className="text-lg font-bold mt-1 break-words">{field.value || "-"}</p>
+                    <p className="text-sm font-semibold text-white">{field.label}</p>
+                    <p className="text-lg font-bold mt-1 break-words text-white">{field.value || "-"}</p>
                   </div>
                 </div>
               </div>
@@ -142,7 +142,7 @@ export default function OrganizationSettings() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl ">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -152,7 +152,7 @@ export default function OrganizationSettings() {
       </div>
 
       {/* Logo Upload Section */}
-      <div className="bg-white border border-border rounded-2xl p-6 shadow-sm">
+      <div className="bg-white border border-border rounded-2xl p-6 shadow-sm dark:bg-black border border-whites">
         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
           <div className="p-2 bg-primary/10 rounded-lg">
             <Briefcase className="h-5 w-5 text-primary" />
@@ -183,7 +183,7 @@ export default function OrganizationSettings() {
       {/* Fields Editor */}
       <div className="space-y-3">
         {fields.map(field => (
-          <div key={field.id} className="bg-white border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <div key={field.id} className="bg-white border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow dark:bg-black border border-whites">
             <div className="flex items-start gap-4">
               <div className="flex-1 space-y-2">
                 <label className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -296,17 +296,17 @@ export default function OrganizationSettings() {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-3 pt-4 sticky bottom-0 bg-white py-4 border-t border-border -mx-6 px-6">
+      <div className="flex gap-3 pt-4 sticky bottom-0 bg-white py-4 border-t border-border -mx-6 px-6 dark:bg-black border border-whites">
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="flex-1 bg-gradient-to-r from-primary to-primary/90 hover:shadow-lg text-white px-6 py-3 rounded-lg font-medium transition-all disabled:opacity-50"
+          className="flex-1 hover:shadow-lg px-6 py-3 rounded-lg font-medium transition-all disabled:opacity-50 dark:bg-green-600 border border-whites text-white bg-green-600 cursor-pointer hover:dark:bg-slate-700" 
         >
           {isSaving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
         </button>
         <button
           onClick={() => setIsEditing(false)}
-          className="flex-1 border border-border hover:bg-muted px-6 py-3 rounded-lg font-medium transition-all"
+          className="flex-1 border border-border hover:bg-muted px-6 py-3 rounded-lg font-medium transition-all text-white bg-red-600 cursor-pointer"
         >
           ยกเลิก
         </button>

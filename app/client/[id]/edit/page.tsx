@@ -1,184 +1,418 @@
-// app/client/[id]/edit/page.tsx
 "use client"
 
-import { useParams, useRouter } from "next/navigation"
-import { useData } from "@/src/contexts/data-context"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Save } from "lucide-react"
+import { ArrowLeft, Save, Loader2, AlertCircle } from "lucide-react"
+import { useRouter, useParams } from "next/navigation"
+import { useEffect, useState } from "react"
 import { toast } from "@/components/ui/use-toast"
-import { useState, useEffect } from "react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
-export default function EditClientPage() {
-  const params = useParams()
+interface TraderForm {
+  name: string
+  traderCode: string
+  address: string
+  city: string
+  contactPerson: string
+  phone: string
+  email: string
+  taxId: string
+  registrationDate: string
+  isActive: boolean
+}
+
+export default function EditTraderPage() {
   const router = useRouter()
-  const { clients, updateClient } = useData()
-  
-  const client = clients.find(c => c.id === params.id)
+  const { id } = useParams() as { id: string }
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
-  const [formData, setFormData] = useState({
-    clientId: "",
+  const [form, setForm] = useState<TraderForm>({
     name: "",
-    contactPerson: "",
-    contactNumber: "",
-    contactEmail: "",
+    traderCode: "",
     address: "",
-    status: "active" as "active" | "inactive",
+    city: "",
+    contactPerson: "",
+    phone: "",
+    email: "",
+    taxId: "",
+    registrationDate: "",
+    isActive: true,
   })
 
-  // โหลดข้อมูลเมื่อ client พร้อม
+  // โหลดข้อมูล Trader
   useEffect(() => {
-    if (client) {
-      setFormData({
-        clientId: client.clientId || "",
-        name: client.name || "",
-        contactPerson: client.contactPerson || "",
-        contactNumber: client.contactNumber || "",
-        contactEmail: client.contactEmail || "",
-        address: client.address || "",
-        status: client.status || "active",
-      })
-    }
-  }, [client])
+    const fetchTrader = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`http://localhost:3000/api/traders/${id}`)
+        if (!res.ok) throw new Error("ไม่สามารถโหลดข้อมูลได้")
 
-  const handleChange = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
+        const data = await res.json()
+
+        setForm({
+          name: data.name || "",
+          traderCode: data.traderCode || "",
+          address: data.address || "",
+          city: data.city || "",
+          contactPerson: data.contactPerson || "",
+          phone: data.phone || "",
+          email: data.email || "",
+          taxId: data.taxId || "",
+          registrationDate: data.registrationDate || "",
+          isActive: data.isActive !== false,
+        })
+      } catch (err) {
+        toast({ title: "โหลดข้อมูล Trader ไม่สำเร็จ", variant: "destructive" })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (id) fetchTrader()
+  }, [id])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!client) return
 
-    const updatedClient = {
-      clientId: formData.clientId,
-      name: formData.name,
-      contactPerson: formData.contactPerson,
-      contactNumber: formData.contactNumber,
-      contactEmail: formData.contactEmail || undefined,
-      address: formData.address || undefined,
-      status: formData.status,
+    if (!form.name || !form.contactPerson || !form.phone) {
+      toast({ title: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", variant: "destructive" })
+      return
     }
 
-    updateClient(client.id, updatedClient)
-    toast({ title: "แก้ไขสำเร็จ", description: "ข้อมูลลูกค้าถูกอัปเดตแล้ว" })
-    router.push(`/client/${client.id}`)
+    setShowConfirm(true)
   }
 
-  if (!client) {
+  const confirmSave = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`http://localhost:3000/api/traders/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          traderCode: form.traderCode || null,
+          address: form.address || null,
+          city: form.city || null,
+          contactPerson: form.contactPerson,
+          phone: form.phone,
+          email: form.email || null,
+          taxId: form.taxId || null,
+          registrationDate: form.registrationDate,
+          isActive: form.isActive,
+        }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}))
+        throw new Error(error.message || "แก้ไข Trader ไม่สำเร็จ")
+      }
+
+      toast({ title: "แก้ไข Trader สำเร็จ!" })
+      router.refresh()
+      router.push("/trader")
+    } catch (err: any) {
+      toast({ title: "แก้ไข Trader ไม่สำเร็จ", description: err.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+      setShowConfirm(false)
+    }
+  }
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-xl text-slate-600">ไม่พบข้อมูลลูกค้า</p>
+          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-lg text-gray-600">กำลังโหลดข้อมูล Trader...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50 p-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" onClick={() => router.push(`/client/${client.id}`)}>
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
-            แก้ไขลูกค้า
-          </h1>
+    <div className="min-h-screen bg-gray-50 dark:bg-black px-6 mt-6">
+      {/* Header */}
+      <div className="bg-white shadow-lg dark:bg-black border border-white-700 rounded">
+        <div className="w-full py-6 px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => router.back()}
+              className="hover:bg-gray-100 cursor-pointer hover:dark:bg-slate-400"
+            >
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white-900">
+              Edit Trader
+            </h1>
+          </div>
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit}>
-          <Card className="shadow-xl border-0">
-            <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-t-xl">
-              <CardTitle className="text-2xl">ข้อมูลลูกค้า</CardTitle>
-            </CardHeader>
-            <CardContent className="p-8 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label>Client ID *</Label>
+      {/* Main Content */}
+      <div className="flex-1 w-full py-6 sm:py-8">
+        {/* Form Card - Full Width */}
+        <div className="bg-white shadow-lg dark:bg-black border border-white-700 rounded">
+          <div className="p-4 sm:p-6 md:p-8 lg:p-10 max-w-full">
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Form Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
+                {/* Row 1 */}
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="name" className="text-sm md:text-base font-medium">
+                    Client Name <span className="text-red-600">*</span>
+                  </Label>
                   <Input
-                    value={formData.clientId}
-                    onChange={(e) => handleChange("clientId", e.target.value)}
+                    id="name"
                     required
-                    placeholder="CUST-001"
+                    value={form.name}
+                    onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                    placeholder="Client Name"
+                    className="h-10 sm:h-11"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Client Name *</Label>
+
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="traderCode" className="text-sm md:text-base font-medium">
+                    Trader Code
+                  </Label>
                   <Input
-                    value={formData.name}
-                    onChange={(e) => handleChange("name", e.target.value)}
-                    required
-                    placeholder="บริษัท ตัวอย่าง จำกัด"
+                    id="traderCode"
+                    value={form.traderCode}
+                    onChange={(e) => setForm((p) => ({ ...p, traderCode: e.target.value }))}
+                    placeholder="Trader Code"
+                    className="h-10 sm:h-11"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Contact Person *</Label>
-                  <Input
-                    value={formData.contactPerson}
-                    onChange={(e) => handleChange("contactPerson", e.target.value)}
-                    required
-                    placeholder="นาย สมชาย ใจดี"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Number *</Label>
-                  <Input
-                    value={formData.contactNumber}
-                    onChange={(e) => handleChange("contactNumber", e.target.value)}
-                    required
-                    placeholder="081-234-5678"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Email</Label>
-                  <Input
-                    value={formData.contactEmail}
-                    onChange={(e) => handleChange("contactEmail", e.target.value)}
-                    type="email"
-                    placeholder="email@company.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select value={formData.status} onValueChange={(v) => handleChange("status", v)}>
-                    <SelectTrigger>
+
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="status" className="text-sm md:text-base font-medium">
+                    Status
+                  </Label>
+                  <Select
+                    value={form.isActive ? "active" : "inactive"}
+                    onValueChange={(value) => setForm((p) => ({ ...p, isActive: value === "active" }))}
+                  >
+                    <SelectTrigger id="status" className="h-10 sm:h-11">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">ใช้งาน</SelectItem>
-                      <SelectItem value="inactive">ไม่ใช้งาน</SelectItem>
+                      <SelectItem value="active">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                          ใช้งาน
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="inactive">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-gray-400" />
+                          ไม่ใช้งาน
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Address</Label>
-                  <Textarea
-                    value={formData.address}
-                    onChange={(e) => handleChange("address", e.target.value)}
-                    rows={3}
-                    placeholder="123 ถนนธุรกิจดี แขวงสำเร็จ เขตเมืองใหญ่ กรุงเทพฯ 10000"
+
+                {/* Row 2 */}
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="contactPerson" className="text-sm md:text-base font-medium">
+                    Contact Person <span className="text-red-600">*</span>
+                  </Label>
+                  <Input
+                    id="contactPerson"
+                    required
+                    value={form.contactPerson}
+                    onChange={(e) => setForm((p) => ({ ...p, contactPerson: e.target.value }))}
+                    placeholder="Contact Person"
+                    className="h-10 sm:h-11"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="phone" className="text-sm md:text-base font-medium">
+                    Contact Number <span className="text-red-600">*</span>
+                  </Label>
+                  <Input
+                    id="phone"
+                    required
+                    value={form.phone}
+                    onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                    placeholder="Contact Number"
+                    className="h-10 sm:h-11"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="email" className="text-sm md:text-base font-medium">
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                    placeholder="Email"
+                    className="h-10 sm:h-11"
+                  />
+                </div>
+
+                {/* Row 3 */}
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="address" className="text-sm md:text-base font-medium">
+                    Address
+                  </Label>
+                  <Input
+                    id="address"
+                    value={form.address}
+                    onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
+                    placeholder="Address"
+                    className="h-10 sm:h-11"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="city" className="text-sm md:text-base font-medium">
+                    City
+                  </Label>
+                  <Input
+                    id="city"
+                    value={form.city}
+                    onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
+                    placeholder="City"
+                    className="h-10 sm:h-11"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="taxId" className="text-sm md:text-base font-medium">
+                    Tax ID
+                  </Label>
+                  <Input
+                    id="taxId"
+                    value={form.taxId}
+                    onChange={(e) => setForm((p) => ({ ...p, taxId: e.target.value }))}
+                    placeholder="Tax ID"
+                    className="h-10 sm:h-11"
+                  />
+                </div>
+
+                {/* Row 4 */}
+                <div className="sm:col-span-2 lg:col-span-1 space-y-2">
+                  <Label htmlFor="registrationDate" className="text-sm md:text-base font-medium">
+                    Registration Date
+                  </Label>
+                  <Input
+                    id="registrationDate"
+                    type="date"
+                    value={form.registrationDate}
+                    readOnly
+                    className="h-10 sm:h-11 bg-gray-100 cursor-not-allowed"
                   />
                 </div>
               </div>
-            </CardContent>
-          </Card>
 
-          <div className="flex justify-end gap-4 mt-8">
-            <Button type="button" variant="outline" size="lg" onClick={() => router.push(`/client/${client.id}`)}>
-              ยกเลิก
-            </Button>
-            <Button type="submit" size="lg" className="bg-blue-600 hover:bg-blue-700">
-              <Save className="mr-2 h-5 w-5" />
-              บันทึกการแก้ไข
-            </Button>
+              {/* Buttons */}
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-gray-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={() => router.back()}
+                  className="w-full sm:w-40 order-2 sm:order-1 dark:bg-red-600 bg-red-600 text-white hover:bg-red-800 cursor-pointer"
+                >
+                  ยกเลิก
+                </Button>
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full sm:w-40 bg-green-600 hover:bg-blue-700 order-1 sm:order-2 flex items-center justify-center gap-2 dark:text-white cursor-pointer"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="hidden sm:inline">กำลังบันทึก...</span>
+                      <span className="sm:hidden">บันทึก...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-5 w-5" />
+                      <span>บันทึกการแก้ไข</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       </div>
+
+      {/* Confirm Modal */}
+      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="p-4 bg-amber-100 rounded-full">
+                <AlertCircle className="w-8 h-8 text-amber-600" />
+              </div>
+            </div>
+            <AlertDialogTitle className="text-2xl font-bold">
+              ยืนยันการแก้ไข Trader
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+
+          <div className="text-center space-y-3 py-4">
+            <div className="text-gray-700">
+              คุณต้องการบันทึกการแก้ไขข้อมูลของ
+            </div>
+            <div className="text-lg font-semibold text-gray-900">
+              {form.name || "Trader นี้"}
+            </div>
+            <div className="text-gray-700">
+              หรือไม่?
+            </div>
+          </div>
+
+          <AlertDialogFooter className="flex gap-3 pt-6">
+            <AlertDialogCancel
+              disabled={saving}
+              className="flex-1 border-2 border-gray-300 hover:bg-gray-100"
+            >
+              ยกเลิก
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmSave}
+              disabled={saving}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-70 flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>บันทึก...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  <span>ยืนยันบันทึก</span>
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

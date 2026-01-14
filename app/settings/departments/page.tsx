@@ -59,7 +59,7 @@ export default function DepartmentPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="bg-white p-6 rounded shadow mb-6 max-w-md"
+        className="bg-white p-6 rounded shadow mb-6 max-w-md dark:bg-black border border-whites"
       >
         <h2 className="text-xl font-semibold mb-4">
           {editId ? 'แก้ไข' : 'เพิ่ม'} แผนก
@@ -77,7 +77,7 @@ export default function DepartmentPage() {
         <div className="flex gap-2">
           <button
             type="submit"
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition cursor-pointer hover:dark:bg-green-600"
           >
             {editId ? 'อัปเดต' : 'เพิ่ม'}
           </button>
@@ -97,9 +97,9 @@ export default function DepartmentPage() {
         </div>
       </form>
 
-      <div className="bg-white shadow rounded overflow-hidden">
+      <div className="bg-white shadow rounded overflow-hidden dark:bg-black border border-whites">
         <table className="w-full">
-          <thead className="bg-gray-100">
+          <thead className="bg-gray-100 dark:bg-slate-800 border border-whites">
             <tr>
               <th className="p-3 text-left">ID</th>
               <th className="p-3 text-left">ชื่อแผนก</th>
@@ -110,7 +110,7 @@ export default function DepartmentPage() {
             {departments.map((d) => (
               <tr
                 key={d.id}
-                className="border-t hover:bg-gray-50 transition"
+                className="border-t hover:bg-gray-50 transition hover:dark:bg-gray-700"
               >
                 <td className="p-3">{d.id}</td>
                 <td className="p-3">{d.name}</td>
@@ -118,7 +118,7 @@ export default function DepartmentPage() {
                   <div className="flex items-center justify-center gap-2">
                     <button
                       onClick={() => handleEdit(d)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-100 hover:text-green-700 transition-all duration-200 shadow-sm hover:shadow"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-600 hover:text-white transition-all duration-200 shadow-sm hover:shadow cursor-pointer"
                     >
                       <Edit2 className="w-4 h-4" />
                       แก้
@@ -126,7 +126,7 @@ export default function DepartmentPage() {
 
                     <button
                       onClick={() => handleDelete(d.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 hover:text-red-700 transition-all duration-200 shadow-sm hover:shadow"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-400 hover:text-white transition-all duration-200 shadow-sm hover:shadow cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                       ลบ

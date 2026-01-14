@@ -84,12 +84,15 @@ export interface PurchaseOrder {
   id: string
   poNumber: string
   projectName: string
+  department: string
   prId?: string
   prNumber: string
   supplierId: string
+  requestedBy: string
+  requestDate: string
+  requiredDate: string
   orderDate: string
   deliveryDate: string
-  status: ApprovalStatus
   items: POItem[]
   subtotal: number
   vatRate: number
@@ -100,6 +103,7 @@ export interface PurchaseOrder {
   paymentTerms: string
   deliveryAddress: string
   remarks?: string
+  status: string
   createdAt: string
   updatedAt: string
   deleted?: boolean
@@ -118,6 +122,8 @@ export interface PurchaseOrder {
   deliveryLocation?: string
   description?: string
   history?: POHIstory[]
+  poDate?: string
+  remark: string
 }
 
 export type POHIstory = {
@@ -192,6 +198,14 @@ export interface Project {
   estimatedCost?: string
   budget?: string | number
   projectName?: string
+  traderId?: string
+  approvals?: {
+    chief: string
+    manager: string
+    executive: string
+  }
+  employee: string
+  wrPoSrRoNumber: string
 }
 
 export interface WRItem {
@@ -233,6 +247,7 @@ export interface WorkRequisition {
   supplier: string
   deliveryLocation: string
   remark: string
+  duration: string | number
   projectId?: string
   expteamQuotation?: string | number
   estimatedPrCost?: string | number
@@ -255,11 +270,11 @@ export interface WOItem {
   estimatedPrice: number
   totalPrice: number
   remarks?: string
+  woNumber?: string
 }
 
 export interface WorkOrder {
   id: string
-  woNumber?: string
   orderNumber?: string
   title?: string
   workRequestId?: string
@@ -297,10 +312,29 @@ export interface WorkOrder {
   ccNo?: string
   durationDays?: number
   history?: WOHistory[]
+  woNumber?: string | number
+  remark: string
+  department: string
+  prId?: string
+  prNumber: string
+  requestedBy: string
+  requestDate: string
+  requiredDate: string
+  orderDate: string
+  deliveryAddress: string
+  deleted?: boolean
+  duration?: number
 }
 
 export type WOHistory = {
   by: string
   action: string
   at: string
+}
+
+export interface Employee {
+  id: string
+  name: string
+  department: string   // เช่น "ฝ่ายการเงิน"
+  role?: "chief" | "manager" | "executive" | "requester"
 }
