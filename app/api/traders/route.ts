@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     console.error("สร้าง Trader ไม่ได้ (POST):", error.message);
     return NextResponse.json(
       { error: error.message || "ไม่สามารถสร้าง Trader ได้" },
-      { status: 400 }
+      { status: 400 }http://localhost:3001/pattycash
     );
   } finally {
     if (client) client.release();
